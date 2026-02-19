@@ -1,0 +1,210 @@
+{
+  "chipId": "SN74LS151N",
+  "name": "8-Line to 1-Line Data Selector/Multiplexer",
+  "manufacturer": "Texas Instruments",
+  "package": "16-pin DIP",
+  "description": "8-to-1 data selector/multiplexer with strobe. Selects one of eight data inputs based on three select lines and routes it to the output. Provides both true (Y) and complementary (W) outputs.",
+
+  "pinout": {
+    "vcc": 16,
+    "gnd": 8,
+    "inputs": [
+      { "pin": 4, "name": "D0", "description": "Data input 0" },
+      { "pin": 3, "name": "D1", "description": "Data input 1" },
+      { "pin": 2, "name": "D2", "description": "Data input 2" },
+      { "pin": 1, "name": "D3", "description": "Data input 3" },
+      { "pin": 15, "name": "D4", "description": "Data input 4" },
+      { "pin": 14, "name": "D5", "description": "Data input 5" },
+      { "pin": 13, "name": "D6", "description": "Data input 6" },
+      { "pin": 12, "name": "D7", "description": "Data input 7" },
+      { "pin": 11, "name": "S2", "description": "Select line 2 (MSB)" },
+      { "pin": 10, "name": "S1", "description": "Select line 1" },
+      { "pin": 9, "name": "S0", "description": "Select line 0 (LSB)" },
+      { "pin": 7, "name": "G", "description": "Strobe/Enable (active LOW)" }
+    ],
+    "outputs": [
+      { "pin": 5, "name": "Y", "description": "Output (active HIGH)" },
+      { "pin": 6, "name": "W", "description": "Complementary output (active LOW)" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip pins to Arduino Mega pins for testing",
+    "power": {
+      "16": "5V",
+      "8": "GND"
+    },
+    "io": {
+      "4": 22,
+      "3": 23,
+      "2": 24,
+      "1": 25,
+      "15": 26,
+      "14": 27,
+      "13": 28,
+      "12": 29,
+      "11": 30,
+      "10": 31,
+      "9": 32,
+      "7": 33,
+      "5": 34,
+      "6": 35
+    }
+  },
+
+  "testSequence": {
+    "description": "Test sequence for SN74LS151N 8-to-1 multiplexer",
+    "tests": [
+      {
+        "testId": 1,
+        "description": "Strobe disabled (G=HIGH): outputs forced LOW/HIGH",
+        "inputs": {
+          "D0": "HIGH", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "LOW", "S1": "LOW", "S0": "LOW",
+          "G": "HIGH"
+        },
+        "expectedOutputs": {
+          "Y": "LOW",
+          "W": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "Select D0 (S=000): D0=HIGH",
+        "inputs": {
+          "D0": "HIGH", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "LOW", "S1": "LOW", "S0": "LOW",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Select D0 (S=000): D0=LOW",
+        "inputs": {
+          "D0": "LOW", "D1": "HIGH", "D2": "HIGH", "D3": "HIGH",
+          "D4": "HIGH", "D5": "HIGH", "D6": "HIGH", "D7": "HIGH",
+          "S2": "LOW", "S1": "LOW", "S0": "LOW",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "LOW",
+          "W": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Select D1 (S=001): D1=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "HIGH", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "LOW", "S1": "LOW", "S0": "HIGH",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Select D2 (S=010): D2=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "HIGH", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "LOW", "S1": "HIGH", "S0": "LOW",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Select D3 (S=011): D3=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "LOW", "D3": "HIGH",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "LOW", "S1": "HIGH", "S0": "HIGH",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Select D4 (S=100): D4=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "HIGH", "D5": "LOW", "D6": "LOW", "D7": "LOW",
+          "S2": "HIGH", "S1": "LOW", "S0": "LOW",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Select D5 (S=101): D5=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "HIGH", "D6": "LOW", "D7": "LOW",
+          "S2": "HIGH", "S1": "LOW", "S0": "HIGH",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "Select D6 (S=110): D6=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "HIGH", "D7": "LOW",
+          "S2": "HIGH", "S1": "HIGH", "S0": "LOW",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "Select D7 (S=111): D7=HIGH",
+        "inputs": {
+          "D0": "LOW", "D1": "LOW", "D2": "LOW", "D3": "LOW",
+          "D4": "LOW", "D5": "LOW", "D6": "LOW", "D7": "HIGH",
+          "S2": "HIGH", "S1": "HIGH", "S0": "HIGH",
+          "G": "LOW"
+        },
+        "expectedOutputs": {
+          "Y": "HIGH",
+          "W": "LOW"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "The SN74LS151N is an 8-to-1 data selector/multiplexer",
+    "Pin 7 (G) is the active-LOW strobe/enable - must be LOW for normal operation",
+    "When G is HIGH, Y is forced LOW and W is forced HIGH regardless of inputs",
+    "Select lines S2-S0 choose which data input (D0-D7) appears at the output",
+    "Y output is true (non-inverted), W output is complementary (inverted)",
+    "Propagation delay is typically 20ns"
+  ]
+}

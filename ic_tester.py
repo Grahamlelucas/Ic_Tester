@@ -1609,12 +1609,6 @@ class ICTesterGUI:
         reserved_pins = {
             0: "Serial RX",
             1: "Serial TX", 
-            4: "LCD D4",
-            5: "LCD D5",
-            6: "LCD D6",
-            7: "LCD D7",
-            8: "LCD RS",
-            9: "LCD EN"
         }
         
         for chip_pin, entry in self.pin_entries.items():
@@ -1918,8 +1912,6 @@ class ICTesterGUI:
         """Clear the output log and reset test status indicator"""
         self.output_text.delete(1.0, tk.END)
         
-        # Send CLEAR to LCD
-        self.send_lcd_command("DISPLAY,READY")
         
         # Reset status indicator to idle state
         self.status_indicator.set_idle()
@@ -2093,8 +2085,6 @@ class ICTesterGUI:
         self.status_indicator.set_testing()
         self.result_text.config(text="Identifying...", fg=Theme.ACCENT_INFO)
         
-        # Send TESTING to LCD for identification
-        self.send_lcd_command("DISPLAY,TESTING")
         
         self.root.update()
         
@@ -2106,8 +2096,6 @@ class ICTesterGUI:
             self.status_indicator.set_pass()
             self.result_text.config(text=f"Detected: {chip_id}", fg=Theme.ACCENT_SUCCESS)
             
-            # Send PASS to LCD for successful identification
-            self.send_lcd_command("DISPLAY,PASS")
             
             # Offer to switch to detected chip
             if chip_id != self.chip_var.get():
@@ -2118,15 +2106,11 @@ class ICTesterGUI:
             self.status_indicator.set_idle()
             self.result_text.config(text=f"Maybe: {chip_id}?", fg=Theme.ACCENT_WARNING)
             
-            # Send FAIL to LCD for uncertain identification
-            self.send_lcd_command("DISPLAY,FAIL")
         else:
             self.log(f"\n❌ {message}", "error")
             self.status_indicator.set_failed()
             self.result_text.config(text="Unknown chip", fg=Theme.ACCENT_ERROR)
             
-            # Send FAIL to LCD for failed identification
-            self.send_lcd_command("DISPLAY,FAIL")
     
     def scan_ports(self):
         """Scan for Arduino ports with cooldown to prevent rapid clicking"""
@@ -2187,8 +2171,6 @@ class ICTesterGUI:
             self.conn_status.config(text="Connected", fg=Theme.CONNECTED)
             self.log("✅ Arduino connected successfully!", "success")
             
-            # Send READY to LCD
-            self.send_lcd_command("DISPLAY,READY")
             
             # Swap Connect button for Disconnect button
             self.connect_btn.pack_forget()
@@ -2340,8 +2322,6 @@ class ICTesterGUI:
         self.status_indicator.set_testing()
         self.result_text.config(text="Testing...", fg=Theme.ACCENT_WARNING)
         
-        # Send TESTING to LCD
-        self.send_lcd_command("DISPLAY,TESTING")
         
         # Disable test button during test
         self.test_btn.draw_button(Theme.TEXT_MUTED)
@@ -2369,22 +2349,12 @@ class ICTesterGUI:
         self.status_indicator.set_failed()
         self.result_text.config(text="TEST ERROR", fg=Theme.ACCENT_ERROR)
         
-        # Send FAIL to LCD for test error
-        self.send_lcd_command("DISPLAY,FAIL")
         
         self.log(f"\n❌ Test error: {error_msg}", "error")
         messagebox.showerror("Test Error", 
                            f"An error occurred during testing:\n\n{error_msg}\n\n"
                            "Check your wiring and try again.")
     
-    def send_lcd_command(self, command):
-        """Send display command to Arduino LCD"""
-        if self.arduino.connected and self.arduino.arduino:
-            try:
-                self.arduino.arduino.write(f"{command}\n".encode())
-                time.sleep(0.1)  # Small delay to ensure command is processed
-            except Exception as e:
-                self.log(f"⚠️ LCD command failed: {e}", "warning")
     
     def display_results(self, results):
         """Display test results with visual indicators"""
@@ -2399,8 +2369,6 @@ class ICTesterGUI:
             self.status_indicator.set_failed()
             self.result_text.config(text="POWER ERROR", fg=Theme.ACCENT_ERROR)
             
-            # Send FAIL to LCD
-            self.send_lcd_command("DISPLAY,FAIL")
             
             error_msg = results.get('error', 'Power verification failed')
             self.log("\n" + "─" * 50)
@@ -2420,8 +2388,6 @@ class ICTesterGUI:
             self.status_indicator.set_failed()
             self.result_text.config(text="PIN ERROR", fg=Theme.ACCENT_ERROR)
             
-            # Send FAIL to LCD
-            self.send_lcd_command("DISPLAY,FAIL")
             
             error_msg = results.get('error', 'Pin verification failed')
             problem_pins = results.get('problemPins', [])
@@ -2464,15 +2430,11 @@ class ICTesterGUI:
             self.result_text.config(text="ALL TESTS PASSED", fg=Theme.ACCENT_SUCCESS)
             self.log("\n🎉 CHIP PASSED ALL TESTS! ✅", "success")
             
-            # Send PASS to LCD
-            self.send_lcd_command("DISPLAY,PASS")
         else:
             self.status_indicator.set_failed()
             self.result_text.config(text="TESTS FAILED", fg=Theme.ACCENT_ERROR)
             self.log("\n❌ CHIP FAILED - See details above", "error")
             
-            # Send FAIL to LCD
-            self.send_lcd_command("DISPLAY,FAIL")
             
             # Auto-detect if wrong chip might be inserted
             self.log("\n🔍 Checking if a different chip is inserted...", "info")

@@ -41,7 +41,6 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 
 - GUI interface for chip testing
 - Arduino Mega 2560 integration
-- LCD display support
 - Chip database with JSON definitions
 - Excel import/export functionality
 - Session logging

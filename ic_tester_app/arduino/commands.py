@@ -22,7 +22,6 @@ class ArduinoCommands:
     - Pin mode configuration
     - Pin state control (read/write)
     - Batch operations
-    - LCD display control
     """
     
     def __init__(self, connection):
@@ -184,44 +183,6 @@ class ArduinoCommands:
         command = f"BMODE,{','.join(pairs)}"
         response = self.conn.send_and_receive(command)
         return response == "OK"
-    
-    # =========================================================================
-    # LCD Display Commands
-    # =========================================================================
-    
-    def display_message(self, message: str) -> bool:
-        """
-        Send display command to LCD.
-        
-        Args:
-            message: Message type (READY, TESTING, PASS, FAIL, etc.)
-        
-        Returns:
-            True if successful
-        """
-        command = f"DISPLAY,{message}"
-        response = self.conn.send_and_receive(command)
-        return response == "OK"
-    
-    def display_ready(self) -> bool:
-        """Display READY on LCD"""
-        return self.display_message("READY")
-    
-    def display_testing(self) -> bool:
-        """Display TESTING on LCD"""
-        return self.display_message("TESTING")
-    
-    def display_pass(self) -> bool:
-        """Display PASS on LCD"""
-        return self.display_message("PASS")
-    
-    def display_fail(self) -> bool:
-        """Display FAIL on LCD"""
-        return self.display_message("FAIL")
-    
-    def clear_display(self) -> bool:
-        """Clear LCD display"""
-        return self.display_message("CLEAR")
     
     # =========================================================================
     # Utility Commands

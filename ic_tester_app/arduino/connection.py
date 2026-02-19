@@ -103,8 +103,7 @@ class ArduinoConnection:
             )
             self._port = port
             
-            # Wait for Arduino reset + display initialization.
-            # TFT firmware can take significantly longer than LCD firmware.
+            # Wait for Arduino reset.
             # IMPORTANT: do not spam commands during boot; some firmware variants
             # only emit READY reliably if serial input is quiet.
             time.sleep(0.3)

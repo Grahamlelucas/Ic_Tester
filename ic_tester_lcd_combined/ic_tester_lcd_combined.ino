@@ -1,10 +1,11 @@
 // IC Tester Display Firmware - Arduino Mega 2560 R3
-// Version 6.0 - TFT Control Deck with settings/diagnostics/monitor pages
+// Version 6.0 - Mega control firmware (headless/TFT/LCD backends)
 // Serial protocol remains backward compatible with existing Python app.
 
 #define DISPLAY_LCD1602 0
 #define DISPLAY_TFT35   1
-#define DISPLAY_BACKEND DISPLAY_TFT35
+#define DISPLAY_NONE    2
+#define DISPLAY_BACKEND DISPLAY_NONE
 
 #if DISPLAY_BACKEND == DISPLAY_LCD1602
   #include <LiquidCrystal.h>
@@ -15,6 +16,8 @@
   #include <TouchScreen.h>
   #include <EEPROM.h>
   MCUFRIEND_kbv tft;
+#elif DISPLAY_BACKEND == DISPLAY_NONE
+  // Headless Mega mode: no display hardware attached.
 #else
   #error "Unsupported DISPLAY_BACKEND"
 #endif
@@ -742,8 +745,7 @@ bool isValidPin(int pin) {
   }
   return false;
 #else
-  if (pin >= 2 && pin <= 3) return true;
-  if (pin >= 10 && pin <= 53) return true;
+  if (pin >= 2 && pin <= 53) return true;
   if (pin >= 55 && pin <= 69) return true;
   return false;
 #endif
@@ -776,14 +778,18 @@ void initDisplay() {
   tft.setTextWrap(false);
   pinMode(XM, OUTPUT);
   pinMode(YP, OUTPUT);
+#elif DISPLAY_BACKEND == DISPLAY_NONE
+  // No display initialization required.
 #endif
 }
 
 void clearDisplay() {
 #if DISPLAY_BACKEND == DISPLAY_LCD1602
   lcd.clear();
-#else
+#elif DISPLAY_BACKEND == DISPLAY_TFT35
   tft.fillScreen(C_BLACK);
+#else
+  // No display to clear in headless mode.
 #endif
 }
 
@@ -794,9 +800,12 @@ void showTextLine(uint8_t line, String text) {
   lcd.print("                ");
   lcd.setCursor(0, line > 1 ? 1 : line);
   lcd.print(text);
-#else
+#elif DISPLAY_BACKEND == DISPLAY_TFT35
   if (line == 0) uiLine1 = text;
   else uiLine2 = text;
+#else
+  (void)line;
+  (void)text;
 #endif
 }
 
@@ -805,9 +814,12 @@ void showText2Lines(String line1, String line2) {
   clearDisplay();
   showTextLine(0, line1);
   showTextLine(1, line2);
-#else
+#elif DISPLAY_BACKEND == DISPLAY_TFT35
   uiLine1 = line1;
   uiLine2 = line2;
+#else
+  (void)line1;
+  (void)line2;
 #endif
 }
 

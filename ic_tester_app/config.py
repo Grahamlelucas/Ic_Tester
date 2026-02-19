@@ -50,20 +50,13 @@ class Config:
     RESERVED_PINS = {
         0: "Serial RX",
         1: "Serial TX",
-        4: "LCD D4",
-        5: "LCD D5",
-        6: "LCD D6",
-        7: "LCD D7",
-        8: "LCD RS",
-        9: "LCD EN",
         50: "SPI MISO (may cause issues)",
         51: "SPI MOSI (may cause issues)",
         52: "SPI SCK (may cause issues)",
         53: "SPI SS (may cause issues)",
-        54: "LCD Buttons (A0)"
     }
     
-    # Valid pins for IC testing (excludes serial 0-1, LCD 4-9, SPI 50-53, A0)
+    # Valid pins for IC testing (excludes serial 0-1, SPI 50-53, A0)
     VALID_TEST_PINS = list(range(2, 4)) + list(range(10, 50)) + list(range(55, 70))
     
     # GUI Settings - larger, more spacious window

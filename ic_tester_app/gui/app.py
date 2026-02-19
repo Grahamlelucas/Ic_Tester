@@ -280,7 +280,6 @@ class ICTesterApp:
         if self.arduino.connect(port):
             self.connection_panel.set_connected()
             self._log("✅ Arduino connected successfully!", "success")
-            self._send_lcd_command("DISPLAY,READY")
         else:
             self.connection_panel.set_failed()
             self._log("❌ Failed to connect to Arduino", "error")
@@ -301,7 +300,6 @@ class ICTesterApp:
                 return
             self.is_testing = False
         
-        self._send_lcd_command("DISPLAY,CLEAR")
         self.arduino.disconnect()
         self.connection_panel.set_disconnected()
         self._log("🔌 Disconnected from Arduino", "info")
@@ -388,10 +386,6 @@ class ICTesterApp:
         except Exception:
             return False
     
-    def _send_lcd_command(self, command: str):
-        """Send a display command to the LCD"""
-        if self.arduino.connected:
-            self.arduino.send_command(command)
     
     # =========================================================================
     # Chip Selection
@@ -608,8 +602,7 @@ class ICTesterApp:
         self.test_start_time = __import__('time').time()
         self.status_panel.set_testing()
         self.chip_panel.set_testing(True)
-        self._send_lcd_command("DISPLAY,TESTING")
-        
+                
         self.output_panel.log_test_start(chip_id)
         
         # Show pre-test hints from intelligence system
@@ -670,14 +663,12 @@ class ICTesterApp:
         # Check for power/pin verification failures
         if not results.get('powerVerified', True):
             self.status_panel.set_power_error()
-            self._send_lcd_command("DISPLAY,FAIL")
             self._log_power_error(results)
             self._show_intelligent_analysis(chip_id, results, confidence)
             return
         
         if not results.get('pinsVerified', True):
             self.status_panel.set_pin_error()
-            self._send_lcd_command("DISPLAY,FAIL")
             self._log_pin_error(results)
             self._show_intelligent_analysis(chip_id, results, confidence)
             return
@@ -706,9 +697,8 @@ class ICTesterApp:
             self._log(f"   • {factor}", "info")
         
         if results.get('success'):
-            self._send_lcd_command("DISPLAY,PASS")
+            pass
         else:
-            self._send_lcd_command("DISPLAY,FAIL")
             # Try to identify correct chip
             self._try_identify_wrong_chip(results)
     
@@ -716,7 +706,7 @@ class ICTesterApp:
         """Log power verification error details"""
         error_msg = results.get('error', 'Power verification failed')
         self._log("\n" + "─" * 50)
-        self._log("⚡ POWER CHECK FAILED", "error")
+        self._log("POWER CHECK FAILED", "error")
         self._log("─" * 50)
         self._log(f"Error: {error_msg}", "error")
         self._log("\nPlease check:", "warning")
@@ -798,8 +788,7 @@ class ICTesterApp:
         self.is_testing = False
         self.chip_panel.set_testing(False)
         self.status_panel.set_test_error()
-        self._send_lcd_command("DISPLAY,FAIL")
-        
+                
         self._log(f"\n❌ Test error: {error_msg}", "error")
         messagebox.showerror("Test Error", 
                            f"An error occurred during testing:\n\n{error_msg}")
@@ -892,7 +881,6 @@ class ICTesterApp:
         self.status_panel.set_idle()
         self.status_panel.reset_stats()
         self.last_result = None
-        self._send_lcd_command("DISPLAY,READY")
         self._log("🔄 Output cleared. Ready for new test.", "info")
     
     def _identify_chip(self):
@@ -906,7 +894,6 @@ class ICTesterApp:
         self._log("=" * 50, "info")
         
         self.status_panel.set_testing()
-        self._send_lcd_command("DISPLAY,TESTING")
         self.root.update()
         
         chip_id, confidence, message = self.tester.identify_chip(
@@ -917,18 +904,14 @@ class ICTesterApp:
             self._log(f"\n✅ {message}", "success")
             self.status_panel.set_passed()
             self.status_panel.set_custom_text(f"Detected: {chip_id}", Theme.ACCENT_SUCCESS)
-            self._send_lcd_command("DISPLAY,PASS")
         elif chip_id and confidence >= 50:
             self._log(f"\n⚠️ {message}", "warning")
             self.status_panel.set_idle()
             self.status_panel.set_custom_text(f"Maybe: {chip_id}?", Theme.ACCENT_WARNING)
-            self._send_lcd_command("DISPLAY,FAIL")
         else:
             self._log(f"\n❌ {message}", "error")
             self.status_panel.set_failed()
             self.status_panel.set_custom_text("Unknown chip", Theme.ACCENT_ERROR)
-            self._send_lcd_command("DISPLAY,FAIL")
-    
     def _show_help(self):
         """Open help dialog"""
         HelpDialog(self.root)

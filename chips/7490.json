@@ -1,0 +1,99 @@
+{
+  "chipId": "7490",
+  "name": "Decade Counter",
+  "manufacturer": "Texas Instruments",
+  "package": "14-pin DIP",
+  "description": "Decade counter with divide-by-2 and divide-by-5 sections. Counts from 0000 to 1001 (0-9 decimal) then resets.",
+  
+  "pinout": {
+    "vcc": 5,
+    "gnd": 10,
+    "inputs": [
+      {"pin": 14, "name": "CKA", "description": "Clock Input A"},
+      {"pin": 1, "name": "CKB", "description": "Clock Input B"},
+      {"pin": 2, "name": "R0_1", "description": "Reset to 0 input 1"},
+      {"pin": 3, "name": "R0_2", "description": "Reset to 0 input 2"},
+      {"pin": 6, "name": "R9_1", "description": "Reset to 9 input 1"},
+      {"pin": 7, "name": "R9_2", "description": "Reset to 9 input 2"}
+    ],
+    "outputs": [
+      {"pin": 12, "name": "QA", "description": "Output A (LSB, 2^0)"},
+      {"pin": 9, "name": "QB", "description": "Output B (2^1)"},
+      {"pin": 8, "name": "QC", "description": "Output C (2^2)"},
+      {"pin": 11, "name": "QD", "description": "Output D (MSB, 2^3)"}
+    ],
+    "noConnect": [4, 13]
+  },
+  
+  "arduinoMapping": {
+    "comment": "Maps chip pins to Arduino pins for testing",
+    "power": {
+      "5": "5V",
+      "10": "GND"
+    },
+    "io": {
+      "1": 2,
+      "2": 3,
+      "3": 4,
+      "6": 5,
+      "7": 6,
+      "8": 7,
+      "9": 8,
+      "11": 9,
+      "12": 10,
+      "14": 11
+    }
+  },
+  
+  "testSequence": {
+    "description": "Test sequence for 7490 decade counter",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {"CKA": "LOW", "CKB": "LOW", "R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW"}
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "Reset to 0 (both R0 inputs HIGH)",
+        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW"},
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0000",
+        "decimalValue": 0
+      },
+      {
+        "testId": 2,
+        "description": "Reset to 9 (both R9 inputs HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "HIGH", "R9_2": "HIGH"},
+        "expectedOutputs": {"QA": "HIGH", "QB": "LOW", "QC": "LOW", "QD": "HIGH"},
+        "binaryValue": "1001",
+        "decimalValue": 9
+      },
+      {
+        "testId": 3,
+        "description": "Clear resets, verify stable at 0",
+        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW"},
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0000",
+        "decimalValue": 0
+      },
+      {
+        "testId": 4,
+        "description": "Release reset, connect for counting (QA to CKB)",
+        "setup": "For decade counting, connect QA output (pin 12) to CKB input (pin 1)",
+        "note": "This test verifies basic counter functionality with a few clock pulses"
+      }
+    ]
+  },
+  
+  "notes": [
+    "For decade counter operation (0-9): Connect QA (pin 12) to CKB (pin 1) externally",
+    "For divide-by-2: Use CKA input only, read QA output",
+    "For divide-by-5: Use CKB input only, read QD output",
+    "Reset to 0: Both R0(1) and R0(2) must be HIGH simultaneously",
+    "Reset to 9: Both R9(1) and R9(2) must be HIGH simultaneously",
+    "Outputs are BCD: 0000 through 1001 (0-9), then wraps to 0000"
+  ]
+}

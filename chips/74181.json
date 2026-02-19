@@ -1,0 +1,446 @@
+{
+  "chipId": "74181",
+  "name": "4-Bit Arithmetic Logic Unit (ALU)",
+  "manufacturer": "Texas Instruments",
+  "package": "24-pin DIP",
+  "description": "4-bit ALU that performs 16 arithmetic and 16 logic functions. Uses function select inputs (S0-S3) and mode control (M) to select operations. Can add, subtract, AND, OR, XOR, and more.",
+  "hardwareRequirements": [
+    {
+      "type": "pullup",
+      "pin": 14,
+      "signal": "AeqB",
+      "target": "VCC",
+      "resistor": "10k",
+      "description": "Add a pull-up resistor from pin 14 (AeqB) to VCC during testing."
+    }
+  ],
+
+  "pinout": {
+    "vcc": 24,
+    "gnd": 12,
+    "inputs": [
+      { "pin": 2, "name": "A0", "description": "A operand bit 0 (LSB)" },
+      { "pin": 23, "name": "A1", "description": "A operand bit 1" },
+      { "pin": 21, "name": "A2", "description": "A operand bit 2" },
+      { "pin": 19, "name": "A3", "description": "A operand bit 3 (MSB)" },
+      { "pin": 1, "name": "B0", "description": "B operand bit 0 (LSB)" },
+      { "pin": 22, "name": "B1", "description": "B operand bit 1" },
+      { "pin": 20, "name": "B2", "description": "B operand bit 2" },
+      { "pin": 18, "name": "B3", "description": "B operand bit 3 (MSB)" },
+      { "pin": 6, "name": "S0", "description": "Function select bit 0" },
+      { "pin": 5, "name": "S1", "description": "Function select bit 1" },
+      { "pin": 4, "name": "S2", "description": "Function select bit 2" },
+      { "pin": 3, "name": "S3", "description": "Function select bit 3" },
+      {
+        "pin": 8,
+        "name": "M",
+        "description": "Mode: HIGH=Logic, LOW=Arithmetic"
+      },
+      { "pin": 7, "name": "Cn", "description": "Carry in (active LOW)" }
+    ],
+    "outputs": [
+      { "pin": 9, "name": "F0", "description": "Result bit 0 (LSB)" },
+      { "pin": 10, "name": "F1", "description": "Result bit 1" },
+      { "pin": 11, "name": "F2", "description": "Result bit 2" },
+      { "pin": 13, "name": "F3", "description": "Result bit 3 (MSB)" },
+      {
+        "pin": 14,
+        "name": "AeqB",
+        "description": "A equals B comparator output"
+      },
+      {
+        "pin": 15,
+        "name": "P",
+        "description": "Propagate (for carry lookahead)"
+      },
+      { "pin": 16, "name": "Cn4", "description": "Carry out (active LOW)" },
+      {
+        "pin": 17,
+        "name": "G",
+        "description": "Generate (for carry lookahead)"
+      }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip pins to Arduino Mega pins for testing - 24-pin chip needs many I/O",
+    "power": {
+      "24": "5V",
+      "12": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "7": 28,
+      "8": 29,
+      "9": 30,
+      "10": 31,
+      "11": 32,
+      "13": 33,
+      "14": 34,
+      "15": 35,
+      "16": 36,
+      "17": 37,
+      "18": 38,
+      "19": 39,
+      "20": 40,
+      "21": 41,
+      "22": 42,
+      "23": 43
+    }
+  },
+
+  "functionTable": {
+    "description": "Function selection via S3-S0 and M inputs",
+    "note": "M=HIGH selects logic functions, M=LOW selects arithmetic functions",
+    "logicFunctions": {
+      "0000": "NOT A",
+      "0001": "NAND (A, B)",
+      "0010": "(NOT A) OR B",
+      "0011": "1 (all ones)",
+      "0100": "NOR (A, B)",
+      "0101": "NOT B",
+      "0110": "XNOR (A, B)",
+      "0111": "A OR (NOT B)",
+      "1000": "(NOT A) AND B",
+      "1001": "XOR (A, B)",
+      "1010": "B",
+      "1011": "A OR B",
+      "1100": "0 (all zeros)",
+      "1101": "A AND (NOT B)",
+      "1110": "A AND B",
+      "1111": "A"
+    },
+    "arithmeticFunctions": {
+      "0000": "A minus 1",
+      "0001": "A*B minus 1",
+      "0010": "A*B minus 1",
+      "0011": "minus 1 (all ones)",
+      "0100": "A plus (A AND NOT B)",
+      "0101": "A*B plus (A AND NOT B)",
+      "0110": "A minus B minus 1",
+      "0111": "A AND NOT B minus 1",
+      "1000": "A plus (A AND B)",
+      "1001": "A plus B",
+      "1010": "A*B plus (A AND B)",
+      "1011": "A AND B minus 1",
+      "1100": "A plus A",
+      "1101": "A*B plus A",
+      "1110": "A*B plus A",
+      "1111": "A minus 1"
+    }
+  },
+
+  "testSequence": {
+    "description": "Test sequence for 74181 ALU - tests key logic and arithmetic operations",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {
+          "A0": "LOW",
+          "A1": "LOW",
+          "A2": "LOW",
+          "A3": "LOW",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "LOW",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "LOW",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "Logic Mode: A=0000, S=1111 (pass A through) -> F=0000",
+        "inputs": {
+          "A0": "LOW",
+          "A1": "LOW",
+          "A2": "LOW",
+          "A3": "LOW",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "HIGH",
+          "S2": "HIGH",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "LOW",
+          "F2": "LOW",
+          "F3": "LOW",
+          "AeqB": "LOW",
+          "P": "LOW",
+          "Cn4": "HIGH",
+          "G": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "Logic Mode: A=1111, S=1111 (pass A through) -> F=1111",
+        "inputs": {
+          "A0": "HIGH",
+          "A1": "HIGH",
+          "A2": "HIGH",
+          "A3": "HIGH",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "HIGH",
+          "S2": "HIGH",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "HIGH",
+          "F1": "HIGH",
+          "F2": "HIGH",
+          "F3": "HIGH",
+          "AeqB": "HIGH",
+          "P": "HIGH",
+          "Cn4": "LOW",
+          "G": "HIGH"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Logic Mode: A=1010, S=1111 (pass A through) -> F=1010",
+        "inputs": {
+          "A0": "LOW",
+          "A1": "HIGH",
+          "A2": "LOW",
+          "A3": "HIGH",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "HIGH",
+          "S2": "HIGH",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "HIGH",
+          "F2": "LOW",
+          "F3": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Logic Mode: A=1111, S=0000 (NOT A) -> F=0000",
+        "inputs": {
+          "A0": "HIGH",
+          "A1": "HIGH",
+          "A2": "HIGH",
+          "A3": "HIGH",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "LOW",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "LOW",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "LOW",
+          "F2": "LOW",
+          "F3": "LOW"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Logic Mode: A=0000, S=0000 (NOT A) -> F=1111",
+        "inputs": {
+          "A0": "LOW",
+          "A1": "LOW",
+          "A2": "LOW",
+          "A3": "LOW",
+          "B0": "LOW",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "LOW",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "LOW",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "HIGH",
+          "F1": "HIGH",
+          "F2": "HIGH",
+          "F3": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Logic Mode: A=1100, B=1010, S=1011 (A AND B) -> F=1000",
+        "inputs": {
+          "A0": "LOW",
+          "A1": "LOW",
+          "A2": "HIGH",
+          "A3": "HIGH",
+          "B0": "LOW",
+          "B1": "HIGH",
+          "B2": "LOW",
+          "B3": "HIGH",
+          "S0": "HIGH",
+          "S1": "HIGH",
+          "S2": "LOW",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "LOW",
+          "F2": "LOW",
+          "F3": "HIGH"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Logic Mode: A=1100, B=1010, S=1110 (A OR B) -> F=1110",
+        "inputs": {
+          "A0": "LOW",
+          "A1": "LOW",
+          "A2": "HIGH",
+          "A3": "HIGH",
+          "B0": "LOW",
+          "B1": "HIGH",
+          "B2": "LOW",
+          "B3": "HIGH",
+          "S0": "LOW",
+          "S1": "HIGH",
+          "S2": "HIGH",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "HIGH",
+          "F2": "HIGH",
+          "F3": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Arithmetic Mode: A=0101, B=0011, S=1001, Cn=HIGH (A+B) -> F=1000",
+        "inputs": {
+          "A0": "HIGH",
+          "A1": "LOW",
+          "A2": "HIGH",
+          "A3": "LOW",
+          "B0": "HIGH",
+          "B1": "HIGH",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "HIGH",
+          "M": "LOW",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "LOW",
+          "F2": "LOW",
+          "F3": "HIGH"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "Arithmetic Mode: A=0001, B=0001, S=1001, Cn=HIGH (1+1=2) -> F=0010",
+        "inputs": {
+          "A0": "HIGH",
+          "A1": "LOW",
+          "A2": "LOW",
+          "A3": "LOW",
+          "B0": "HIGH",
+          "B1": "LOW",
+          "B2": "LOW",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "HIGH",
+          "M": "LOW",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "LOW",
+          "F1": "HIGH",
+          "F2": "LOW",
+          "F3": "LOW"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "XNOR Comparator: A=B=0101, S=1001 -> F=1111, AeqB HIGH",
+        "inputs": {
+          "A0": "HIGH",
+          "A1": "LOW",
+          "A2": "HIGH",
+          "A3": "LOW",
+          "B0": "HIGH",
+          "B1": "LOW",
+          "B2": "HIGH",
+          "B3": "LOW",
+          "S0": "HIGH",
+          "S1": "LOW",
+          "S2": "LOW",
+          "S3": "HIGH",
+          "M": "HIGH",
+          "Cn": "HIGH"
+        },
+        "expectedOutputs": {
+          "F0": "HIGH",
+          "F1": "HIGH",
+          "F2": "HIGH",
+          "F3": "HIGH",
+          "AeqB": "HIGH"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "SN74LS181N - 4-bit Arithmetic Logic Unit",
+    "24-pin DIP package - requires many Arduino pins",
+    "M=HIGH selects 16 logic functions, M=LOW selects 16 arithmetic functions",
+    "S0-S3 select which of the 16 functions to perform",
+    "Cn is carry input (active LOW), Cn4 is carry output (active LOW)",
+    "P and G outputs for carry lookahead cascading",
+    "AeqB output goes HIGH when all F outputs match",
+    "Historic chip - used in early minicomputers and the Apollo Guidance Computer"
+  ]
+}

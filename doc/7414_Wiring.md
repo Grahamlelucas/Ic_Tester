@@ -1,0 +1,32 @@
+Arduino Uno R3 Breadboard 7414 IC
+┌─────────────┐
+Digital Pin 2 ────────────────────────────────────────→ │1 1A (IN) │
+Digital Pin 3 ←──────────────────────────────────────── │2 1Y (OUT) │
+Digital Pin 4 ────────────────────────────────────────→ │3 2A (IN) │
+Digital Pin 5 ←──────────────────────────────────────── │4 2Y (OUT) │
+Digital Pin 6 ────────────────────────────────────────→ │5 3A (IN) │
+Digital Pin 7 ←──────────────────────────────────────── │6 3Y (OUT) │
+GND ──────────→ Ground Rail (-) ────────────→ │7 GND │
+Digital Pin 8 ←──────────────────────────────────────── │8 4Y (OUT) │
+Digital Pin 9 ────────────────────────────────────────→ │9 4A (IN) │
+Digital Pin 10 ←──────────────────────────────────────── │10 5Y (OUT) │
+Digital Pin 11 ────────────────────────────────────────→ │11 5A (IN) │
+Digital Pin 12 ←──────────────────────────────────────── │12 6Y (OUT) │
+Digital Pin 13 ────────────────────────────────────────→ │13 6A (IN) │
+5V ──────────→ Power Rail (+) ─────────────→ │14 VCC │
+└─────────────┘
+
+Legend:
+───→ Signal going TO the chip (INPUT)
+←─── Signal coming FROM the chip (OUTPUT)
+
+Pin Summary:
+Inputs: 1A(pin 1), 2A(pin 3), 3A(pin 5), 4A(pin 9), 5A(pin 11), 6A(pin 13)
+Outputs: 1Y(pin 2), 2Y(pin 4), 3Y(pin 6), 4Y(pin 8), 5Y(pin 10), 6Y(pin 12)
+Power: VCC(pin 14) = +5V, GND(pin 7) = Ground
+
+Truth Table (Inverter):
+INPUT │ OUTPUT
+───────┼────────
+LOW │ HIGH
+HIGH │ LOW

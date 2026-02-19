@@ -1,0 +1,238 @@
+{
+  "chipId": "7414",
+  "name": "Hex Schmitt Trigger Inverter",
+  "manufacturer": "Texas Instruments",
+  "package": "14-pin DIP",
+  "description": "Six independent Schmitt trigger inverter gates. Each gate inverts the input signal with hysteresis for noise immunity.",
+
+  "pinout": {
+    "vcc": 14,
+    "gnd": 7,
+    "inputs": [
+      { "pin": 1, "name": "1A", "description": "Gate 1 Input" },
+      { "pin": 3, "name": "2A", "description": "Gate 2 Input" },
+      { "pin": 5, "name": "3A", "description": "Gate 3 Input" },
+      { "pin": 9, "name": "4A", "description": "Gate 4 Input" },
+      { "pin": 11, "name": "5A", "description": "Gate 5 Input" },
+      { "pin": 13, "name": "6A", "description": "Gate 6 Input" }
+    ],
+    "outputs": [
+      { "pin": 2, "name": "1Y", "description": "Gate 1 Output" },
+      { "pin": 4, "name": "2Y", "description": "Gate 2 Output" },
+      { "pin": 6, "name": "3Y", "description": "Gate 3 Output" },
+      { "pin": 8, "name": "4Y", "description": "Gate 4 Output" },
+      { "pin": 10, "name": "5Y", "description": "Gate 5 Output" },
+      { "pin": 12, "name": "6Y", "description": "Gate 6 Output" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip pins to Arduino pins for testing",
+    "power": {
+      "14": "5V",
+      "7": "GND"
+    },
+    "io": {
+      "1": 2,
+      "2": 3,
+      "3": 4,
+      "4": 5,
+      "5": 6,
+      "6": 7,
+      "8": 8,
+      "9": 9,
+      "10": 10,
+      "11": 11,
+      "12": 12,
+      "13": 13
+    }
+  },
+
+  "testSequence": {
+    "description": "Test sequence for 7414 hex Schmitt trigger inverter",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "All inputs LOW - all outputs should be HIGH (inverted)",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH",
+          "5Y": "HIGH",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "All inputs HIGH - all outputs should be LOW (inverted)",
+        "inputs": {
+          "1A": "HIGH",
+          "2A": "HIGH",
+          "3A": "HIGH",
+          "4A": "HIGH",
+          "5A": "HIGH",
+          "6A": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "LOW",
+          "3Y": "LOW",
+          "4Y": "LOW",
+          "5Y": "LOW",
+          "6Y": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Gate 1 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "HIGH",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH",
+          "5Y": "HIGH",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Gate 2 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "HIGH",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW",
+          "3Y": "HIGH",
+          "4Y": "HIGH",
+          "5Y": "HIGH",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Gate 3 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "HIGH",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "LOW",
+          "4Y": "HIGH",
+          "5Y": "HIGH",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Gate 4 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "HIGH",
+          "5A": "LOW",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "LOW",
+          "5Y": "HIGH",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Gate 5 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "HIGH",
+          "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH",
+          "5Y": "LOW",
+          "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Gate 6 test - input HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW",
+          "2A": "LOW",
+          "3A": "LOW",
+          "4A": "LOW",
+          "5A": "LOW",
+          "6A": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH",
+          "5Y": "HIGH",
+          "6Y": "LOW"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "Each gate is an independent Schmitt trigger inverter",
+    "Schmitt trigger provides hysteresis for noise immunity",
+    "VT+ (positive threshold) ~1.7V, VT- (negative threshold) ~0.9V",
+    "Useful for debouncing switches and cleaning up noisy signals"
+  ]
+}

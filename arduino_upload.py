@@ -10,7 +10,7 @@ import sys
 import serial.tools.list_ports
 
 # Configuration
-SKETCH_PATH = os.path.join(os.path.dirname(__file__), "ic_tester_lcd_combined.ino")
+SKETCH_PATH = os.path.join(os.path.dirname(__file__), "ic_tester_firmware", "ic_tester_firmware.ino")
 BOARD_FQBN = "arduino:avr:mega"  # Mega 2560
 
 def check_arduino_cli():

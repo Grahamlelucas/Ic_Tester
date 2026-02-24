@@ -323,40 +323,11 @@ class ICTesterApp:
         self.root.after(150, poll_events)
 
     def _handle_firmware_event(self, event_line: str):
-        """Parse firmware EVT lines and log without affecting test flow."""
+        """Log any unsolicited firmware lines."""
         try:
-            parts = event_line.split(",")
-            if len(parts) < 2 or parts[0] != "EVT":
-                self._log(f"📨 {event_line}", "info")
-                return
-
-            category = parts[1]
-            if category == "WARN":
-                message = ",".join(parts[2:]) if len(parts) > 2 else "Firmware warning"
-                self._log(f"⚠️ TFT WARN: {message}", "warning")
-                return
-
-            if category == "TOUCH" and len(parts) >= 4:
-                subtype = parts[2]
-                value = ",".join(parts[3:])
-                self._log(f"👆 TFT Touch {subtype}: {value}", "info")
-                return
-
-            if category == "SETTING" and len(parts) >= 5 and parts[2] == "CHANGED":
-                key = parts[3]
-                value = ",".join(parts[4:])
-                self._log(f"⚙️ TFT Setting changed: {key}={value}", "info")
-                return
-
-            if category == "DIAG" and len(parts) >= 4:
-                metric = parts[2]
-                value = ",".join(parts[3:])
-                self._log(f"🩺 TFT Diag {metric}: {value}", "info")
-                return
-
             self._log(f"📨 {event_line}", "info")
         except Exception as e:
-            logger.debug(f"Failed to parse firmware event '{event_line}': {e}")
+            logger.debug(f"Failed to log firmware event '{event_line}': {e}")
     
     def _check_arduino_alive(self) -> bool:
         """Gentle check if Arduino is still connected (doesn't auto-disconnect)"""

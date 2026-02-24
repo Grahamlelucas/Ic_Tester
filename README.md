@@ -49,7 +49,7 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 - `run_ic_tester.py` - Main entry point
 - `ic_tester_app/` - Modular application code
 - `chips/` - Chip definition files
-- `ic_tester_lcd_combined/` - Arduino firmware
+- `ic_tester_firmware/` - Arduino firmware
 - `build_app.py` - Build standalone executable
 
 ## Building Standalone Executable

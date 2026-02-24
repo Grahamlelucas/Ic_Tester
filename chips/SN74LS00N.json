@@ -1,0 +1,237 @@
+{
+  "chipId": "SN74LS00N",
+  "name": "Quad 2-Input NAND Gate",
+  "manufacturer": "Texas Instruments",
+  "package": "14-pin DIP",
+  "description": "Four independent 2-input NAND gates. Output is LOW only when both inputs are HIGH.",
+
+  "pinout": {
+    "vcc": 14,
+    "gnd": 7,
+    "inputs": [
+      { "pin": 1, "name": "1A", "description": "Gate 1 Input A" },
+      { "pin": 2, "name": "1B", "description": "Gate 1 Input B" },
+      { "pin": 4, "name": "2A", "description": "Gate 2 Input A" },
+      { "pin": 5, "name": "2B", "description": "Gate 2 Input B" },
+      { "pin": 9, "name": "3A", "description": "Gate 3 Input A" },
+      { "pin": 10, "name": "3B", "description": "Gate 3 Input B" },
+      { "pin": 12, "name": "4A", "description": "Gate 4 Input A" },
+      { "pin": 13, "name": "4B", "description": "Gate 4 Input B" }
+    ],
+    "outputs": [
+      { "pin": 3, "name": "1Y", "description": "Gate 1 Output" },
+      { "pin": 6, "name": "2Y", "description": "Gate 2 Output" },
+      { "pin": 8, "name": "3Y", "description": "Gate 3 Output" },
+      { "pin": 11, "name": "4Y", "description": "Gate 4 Output" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins",
+    "power": {
+      "14": "5V",
+      "7": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "8": 28,
+      "9": 29,
+      "10": 30,
+      "11": 31,
+      "12": 32,
+      "13": 33
+    }
+  },
+
+  "testSequence": {
+    "description": "Full NAND truth table test for all 4 gates",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "LOW", "4B": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "All inputs LOW - all outputs HIGH (NAND: 0,0 -> 1)",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "LOW", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "All inputs HIGH - all outputs LOW (NAND: 1,1 -> 0)",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH",
+          "2A": "HIGH", "2B": "HIGH",
+          "3A": "HIGH", "3B": "HIGH",
+          "4A": "HIGH", "4B": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "LOW",
+          "3Y": "LOW",
+          "4Y": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "A=HIGH B=LOW all gates - outputs HIGH (NAND: 1,0 -> 1)",
+        "inputs": {
+          "1A": "HIGH", "1B": "LOW",
+          "2A": "HIGH", "2B": "LOW",
+          "3A": "HIGH", "3B": "LOW",
+          "4A": "HIGH", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "A=LOW B=HIGH all gates - outputs HIGH (NAND: 0,1 -> 1)",
+        "inputs": {
+          "1A": "LOW", "1B": "HIGH",
+          "2A": "LOW", "2B": "HIGH",
+          "3A": "LOW", "3B": "HIGH",
+          "4A": "LOW", "4B": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Gate 1 isolated - both HIGH, output LOW",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "LOW", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Gate 2 isolated - both HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "HIGH", "2B": "HIGH",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "LOW", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Gate 3 isolated - both HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "HIGH", "3B": "HIGH",
+          "4A": "LOW", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "LOW",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Gate 4 isolated - both HIGH, output LOW",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "HIGH", "4B": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "LOW"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "Alternating gates - G1,G3 active, G2,G4 idle",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH",
+          "2A": "LOW", "2B": "LOW",
+          "3A": "HIGH", "3B": "HIGH",
+          "4A": "LOW", "4B": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH",
+          "3Y": "LOW",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "Alternating gates - G2,G4 active, G1,G3 idle",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW",
+          "2A": "HIGH", "2B": "HIGH",
+          "3A": "LOW", "3B": "LOW",
+          "4A": "HIGH", "4B": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW",
+          "3Y": "HIGH",
+          "4Y": "LOW"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "SN74LS00N is the LS (Low-power Schottky) version of the 7400",
+    "NAND truth table: 0,0->1 | 0,1->1 | 1,0->1 | 1,1->0",
+    "Output is LOW only when BOTH inputs are HIGH",
+    "NAND is a universal gate - any logic function can be built from NANDs",
+    "Propagation delay: ~9.5ns typical (LS series)"
+  ]
+}

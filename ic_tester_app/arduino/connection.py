@@ -95,12 +95,15 @@ class ArduinoConnection:
             if self._serial:
                 self.disconnect()
             
-            # Open serial connection
+            # Open serial connection with DTR disabled to prevent
+            # Arduino reset on connect/reconnect.
             self._serial = serial.Serial(
                 port, 
                 Config.SERIAL_BAUD_RATE, 
-                timeout=Config.SERIAL_TIMEOUT
+                timeout=Config.SERIAL_TIMEOUT,
+                dsrdtr=False,
             )
+            self._serial.dtr = False
             self._port = port
             
             # Wait for Arduino reset.
@@ -259,15 +262,33 @@ class ArduinoConnection:
         response = self.send_and_receive("PING", timeout=2.0)
         return response == "PONG"
     
-    def clear_buffer(self):
-        """Clear any pending data in serial buffer"""
-        if self._serial:
-            try:
-                self._serial.reset_input_buffer()
-                self._serial.reset_output_buffer()
-                self._event_queue.clear()
-            except Exception as e:
-                logger.error(f"Error clearing buffer: {e}")
+    def is_port_alive(self) -> bool:
+        """Quick check that the serial port is still present on the system."""
+        if not self._serial or not self._port:
+            return False
+        try:
+            # On macOS/Linux, a closed USB port raises on property access.
+            _ = self._serial.in_waiting
+            return True
+        except (OSError, serial.SerialException):
+            logger.warning(f"Port {self._port} is no longer available")
+            self._connected = False
+            return False
+
+    def clear_buffer(self) -> bool:
+        """Clear any pending data in serial buffer.
+        Returns True on success, False if the port has died."""
+        if not self._serial:
+            return False
+        try:
+            self._serial.reset_input_buffer()
+            self._serial.reset_output_buffer()
+            self._event_queue.clear()
+            return True
+        except (OSError, serial.SerialException) as e:
+            logger.error(f"Error clearing buffer (port likely disconnected): {e}")
+            self._connected = False
+            return False
     
     def drain_events(self) -> List[str]:
         """Return and clear queued firmware EVT lines."""

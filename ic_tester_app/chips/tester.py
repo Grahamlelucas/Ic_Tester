@@ -74,8 +74,17 @@ class ICTester:
         Returns:
             Tuple of (success: bool, message: str)
         """
+        # Quick check: is the USB port still present?
+        if not self.arduino.is_port_alive():
+            logger.error("Arduino USB port is no longer available")
+            return (False, "Arduino disconnected - USB port not found. "
+                    "Check cable and try reconnecting.")
+        
         # Clear any stale data in serial buffer before PING
-        self.arduino.clear_buffer()
+        if not self.arduino.clear_buffer():
+            logger.error("Failed to clear serial buffer - port may have dropped")
+            return (False, "Arduino connection lost during buffer clear. "
+                    "Try unplugging and re-plugging the USB cable.")
         time.sleep(0.1)
         
         # Send a test command to verify Arduino is responding (with retries)
@@ -85,6 +94,9 @@ class ICTester:
             if response and "PONG" in response:
                 break
             logger.debug(f"PING attempt {attempt + 1}/{max_retries} failed, response: {response}")
+            if not self.arduino.is_port_alive():
+                return (False, "Arduino disconnected during PING. "
+                        "USB cable may be loose.")
             time.sleep(0.2)
         else:
             logger.error(f"Arduino not responding to PING after {max_retries} attempts")

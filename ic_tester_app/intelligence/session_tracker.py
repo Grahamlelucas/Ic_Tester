@@ -167,8 +167,6 @@ class SessionTracker:
         
         # Extract failure reasons from results
         failure_reasons = []
-        if not results.get('powerVerified', True):
-            failure_reasons.append("power_verification_failed")
         if not results.get('pinsVerified', True):
             failure_reasons.append("pin_verification_failed")
         if results.get('failedTests'):

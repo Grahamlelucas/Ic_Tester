@@ -11,11 +11,7 @@ Coordinates all GUI panels and manages the IC testing workflow.
 import time
 import threading
 import tkinter as tk
-from pathlib import Path
-import subprocess
-import platform
-import os
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
 from typing import Dict
 
 from .theme import Theme, get_fonts
@@ -26,11 +22,7 @@ from ..arduino import ArduinoConnection
 from ..chips import (
     ChipDatabase,
     ICTester,
-    export_results_to_excel,
-    create_excel_template,
-    sync_json_chips_to_excel,
 )
-from ..chips.excel_io import workbook_has_chips
 from ..chips.migration import PinMigrationHelper
 from ..config import Config
 from ..logger import get_logger, setup_logging
@@ -78,8 +70,6 @@ class ICTesterApp:
         # Initialize core components
         self.arduino = ArduinoConnection()
         self.chip_db = ChipDatabase(
-            source_mode=Config.DATA_SOURCE_MODE,
-            excel_path=Config.EXCEL_LIBRARY_PATH,
             board=Config.DEFAULT_BOARD
         )
         self.tester = ICTester(self.arduino, self.chip_db)
@@ -101,7 +91,6 @@ class ICTesterApp:
         self.connection_check_interval = Config.CONNECTION_CHECK_INTERVAL
         self._last_connect_time = time.time()  # Initialize to now (prevents early disconnect)
         self._monitor_enabled = True  # Can disable monitor temporarily
-        self._excel_library_path = Path(Config.EXCEL_LIBRARY_PATH)
         
         # Build UI
         self._create_ui()
@@ -160,13 +149,7 @@ class ICTesterApp:
             on_run_test=self._run_test,
             on_run_counter=self._start_counter,
             on_stop=self._stop_counter,
-            on_source_changed=self._on_source_changed,
-            on_load_workbook=self._load_workbook,
-            on_open_workbook=self._open_workbook_file,
-            on_sync_json_to_excel=self._sync_json_to_excel,
-            on_export_results=self._export_results_to_excel,
-            board=self.chip_db.get_board(),
-            source_mode=self.chip_db.get_source_mode()
+            board=self.chip_db.get_board()
         )
         
         self.status_panel = StatusPanel(left_col)
@@ -396,115 +379,7 @@ class ICTesterApp:
         self.chip_db.reload()
         chip_ids = self.chip_db.get_all_chip_ids(board=self.chip_panel.get_board())
         self.chip_panel.set_chip_ids(chip_ids)
-        self._log(
-            f"📚 Loaded {len(chip_ids)} chip(s) from {self.chip_db.get_source_mode().upper()} source",
-            "info"
-        )
-        for err in self.chip_db.get_source_errors()[:3]:
-            self._log(f"⚠️ Source warning: {err}", "warning")
-    
-    def _on_source_changed(self, source_mode: str):
-        """Handle JSON/Excel/Hybrid source selection."""
-        self.chip_db.set_source_mode(source_mode)
-        # Reset cross-chip migration context when source changes to avoid
-        # comparing chips that may not exist in the new source mode.
-        self._previous_chip_id = None
-        self._previous_chip_mapping = None
-        self._log(f"🔁 Data source set to {source_mode.upper()}", "info")
-        self._refresh_chip_list()
-    
-    def _load_workbook(self):
-        """Prompt for Excel workbook and switch to it."""
-        selected = filedialog.askopenfilename(
-            title="Select Chip Library Workbook",
-            filetypes=[("Excel Workbook", "*.xlsx")],
-            initialdir=str(Config.CHIPS_DIR),
-        )
-        if not selected:
-            return
-        
-        workbook = Path(selected)
-        self._excel_library_path = workbook
-        self.chip_db.set_excel_path(workbook)
-        
-        if not workbook_has_chips(workbook, board=self.chip_panel.get_board()):
-            self._log("⚠️ Workbook loaded but no active chip mappings found for selected board", "warning")
-        
-        self._log(f"📗 Loaded workbook: {workbook.name}", "success")
-        if self.chip_db.get_source_mode() == "json":
-            self.chip_panel.set_source_mode("hybrid")
-            self.chip_db.set_source_mode("hybrid")
-            self._log("ℹ️ Switched source to HYBRID to include workbook data", "info")
-        
-        self._refresh_chip_list()
-    
-    def _open_workbook_file(self):
-        """Open current workbook in default desktop spreadsheet app."""
-        try:
-            workbook = self._ensure_excel_workbook()
-            system = platform.system()
-            if system == "Darwin":
-                subprocess.Popen(["open", str(workbook)])
-            elif system == "Windows":
-                os.startfile(str(workbook))
-            else:
-                subprocess.Popen(["xdg-open", str(workbook)])
-            self._log(f"📂 Opened workbook: {workbook.name}", "info")
-        except Exception as e:
-            self._log(f"❌ Could not open workbook: {e}", "error")
-            messagebox.showerror("Open Workbook Failed", f"Could not open workbook:\n\n{e}")
-    
-    def _sync_json_to_excel(self):
-        """Rebuild workbook definitions from current JSON chips."""
-        try:
-            workbook = self._ensure_excel_workbook()
-            stats = sync_json_chips_to_excel(
-                chips_dir=Config.CHIPS_DIR,
-                workbook_path=workbook,
-                board=self.chip_panel.get_board(),
-                preserve_results=True,
-            )
-            self.chip_db.set_excel_path(workbook)
-            self._log(
-                f"🛠 Synced JSON -> Excel ({stats['chips']} chips, {stats['test_rows']} test rows)",
-                "success",
-            )
-            self._refresh_chip_list()
-        except Exception as e:
-            self._log(f"❌ JSON->Excel sync failed: {e}", "error")
-            messagebox.showerror("Sync Failed", f"Could not sync JSON to Excel:\n\n{e}")
-    
-    def _ensure_excel_workbook(self) -> Path:
-        workbook = Path(self._excel_library_path)
-        if not workbook.exists():
-            sync_json_chips_to_excel(
-                chips_dir=Config.CHIPS_DIR,
-                workbook_path=workbook,
-                board=self.chip_panel.get_board() if hasattr(self, "chip_panel") else Config.DEFAULT_BOARD,
-                preserve_results=True,
-            )
-            self._log(f"🧩 Created Excel library from JSON: {workbook.name}", "success")
-        return workbook
-    
-    def _export_results_to_excel(self):
-        """Export latest test results to workbook Results sheet."""
-        if not self.last_result:
-            messagebox.showwarning("No Results", "Run at least one test before exporting results.")
-            return
-        
-        try:
-            workbook = self._ensure_excel_workbook()
-            export_results_to_excel(
-                self.last_result,
-                workbook,
-                board=self.chip_panel.get_board(),
-                sheet_name="Results",
-                append=True,
-            )
-            self._log(f"✅ Exported results to Excel: {workbook.name}", "success")
-        except Exception as e:
-            self._log(f"❌ Failed to export results: {e}", "error")
-            messagebox.showerror("Export Failed", f"Could not export results:\n\n{e}")
+        self._log(f"📚 Loaded {len(chip_ids)} chip(s)", "info")
     
     def _on_chip_selected(self, chip_id: str):
         """Handle chip selection change"""
@@ -613,21 +488,12 @@ class ICTesterApp:
         # Store mapping for later analysis
         self._current_test_mapping = user_mapping
         
-        # Check external power mode
-        external_power = self.chip_panel.is_external_power()
-        logger.info(f"External power checkbox state: {external_power}")
-        if external_power:
-            self._log("🔋 External power supply mode enabled", "info")
-        else:
-            self._log("⚡ Using Arduino power (VCC/GND)", "info")
-        
         # Run in thread
         def test_thread():
             try:
                 results = self.tester.run_test(chip_id, 
                                               progress_callback=self._log,
                                               custom_mapping=user_mapping,
-                                              external_power=external_power,
                                               board=self.chip_panel.get_board())
                 self.root.after(0, lambda: self._display_results(results))
             except Exception as e:
@@ -660,13 +526,7 @@ class ICTesterApp:
             chip_id, results, historical_rate
         )
         
-        # Check for power/pin verification failures
-        if not results.get('powerVerified', True):
-            self.status_panel.set_power_error()
-            self._log_power_error(results)
-            self._show_intelligent_analysis(chip_id, results, confidence)
-            return
-        
+        # Check for pin verification failures
         if not results.get('pinsVerified', True):
             self.status_panel.set_pin_error()
             self._log_pin_error(results)
@@ -701,19 +561,6 @@ class ICTesterApp:
         else:
             # Try to identify correct chip
             self._try_identify_wrong_chip(results)
-    
-    def _log_power_error(self, results):
-        """Log power verification error details"""
-        error_msg = results.get('error', 'Power verification failed')
-        self._log("\n" + "─" * 50)
-        self._log("POWER CHECK FAILED", "error")
-        self._log("─" * 50)
-        self._log(f"Error: {error_msg}", "error")
-        self._log("\nPlease check:", "warning")
-        self._log("  • Arduino is properly connected via USB", "warning")
-        self._log("  • VCC pin connected to Arduino 5V", "warning")
-        self._log("  • GND pin connected to Arduino GND", "warning")
-        self._log("  • Chip is seated correctly", "warning")
     
     def _log_pin_error(self, results):
         """Log pin verification error details"""

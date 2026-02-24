@@ -168,10 +168,6 @@ class PatternAnalyzer:
         """
         mistakes = []
         
-        # Check power verification
-        if not results.get('powerVerified', True):
-            mistakes.extend(self._analyze_power_failure(chip_id, results))
-        
         # Check pin verification
         if not results.get('pinsVerified', True):
             mistakes.extend(self._analyze_pin_failure(chip_id, results, pin_mapping))
@@ -347,11 +343,6 @@ class PatternAnalyzer:
         """
         factors = []
         
-        # Power confidence
-        power_conf = 1.0 if results.get('powerVerified', False) else 0.2
-        if power_conf < 1.0:
-            factors.append("Power verification failed - results unreliable")
-        
         # Wiring confidence
         wiring_conf = 1.0 if results.get('pinsVerified', False) else 0.3
         if wiring_conf < 1.0:
@@ -394,12 +385,12 @@ class PatternAnalyzer:
                 identity_conf *= 0.8  # More likely wrong chip or wiring
         
         # Calculate overall confidence
-        overall = (power_conf * 0.3 + wiring_conf * 0.3 + 
-                  test_conf * 0.25 + identity_conf * 0.15)
+        overall = (wiring_conf * 0.4 + 
+                  test_conf * 0.4 + identity_conf * 0.2)
         
         return ConfidenceScore(
             overall=overall,
-            power_confidence=power_conf,
+            power_confidence=1.0,
             wiring_confidence=wiring_conf,
             chip_identity_confidence=identity_conf,
             factors=factors

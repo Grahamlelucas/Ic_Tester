@@ -419,26 +419,20 @@ class HelpDialog:
         elif tab_name == "Adding Chips":
             return [
                 ("Adding New Chip Definitions\n\n", "h1"),
-                ("Chip definitions can be loaded from ", None),
-                ("Excel workbook", "highlight"), (" or ", None), ("JSON files", "highlight"),
+                ("Chip definitions are stored as ", None),
+                ("JSON files", "highlight"),
                 (" in the ", None), ("chips/", "code"), (" folder.\n\n", None),
-                ("Recommended workflow: use ", None), ("chip_library.xlsx", "code"),
-                (" as the source of truth.\n\n", None),
                 
-                ("Quick Start (Excel)\n\n", "h2"),
-                ("1. Load or create ", None), ("chips/chip_library.xlsx", "code"), ("\n", None),
-                ("2. Fill sheets: ", None), ("Chips, Pinout, Mappings, Tests, Requirements", "code"), ("\n", None),
-                ("3. Select source mode ", None), ("Excel", "code"), (" or ", None), ("Hybrid", "code"), (" in the GUI\n", None),
-                ("4. Use ", None), ("Load Workbook", "code"), (" and run tests normally\n\n", None),
-                
-                ("Compatibility (JSON)\n\n", "h2"),
-                ("JSON files are still supported during migration.\n", None),
-                ("Existing ", None), ("*.json", "code"), (" chip files in ", None), ("chips/", "code"), (" still load.\n\n", None),
+                ("Quick Start\n\n", "h2"),
+                ("1. Create a new ", None), (".json", "code"), (" file in the ", None), ("chips/", "code"), (" folder\n", None),
+                ("2. Use an existing chip file as a template\n", None),
+                ("3. Restart the app or reload to see the new chip\n\n", None),
                 
                 ("Required JSON Fields\n\n", "h2"),
                 ("• ", None), ("chipId", "code"), (" - The chip's part number\n", None),
                 ("• ", None), ("name", "code"), (" - Human-readable name\n", None),
-                ("• ", None), ("pinout", "code"), (" - Pin definitions (inputs, outputs, power)\n", None),
+                ("• ", None), ("pinout", "code"), (" - Pin definitions (inputs, outputs, VCC, GND)\n", None),
+                ("• ", None), ("arduinoMapping", "code"), (" - Chip pin to Arduino pin mapping\n", None),
                 ("• ", None), ("testSequence", "code"), (" - The tests to run\n\n", None),
                 
                 ("Example JSON Structure\n\n", "h2"),
@@ -450,6 +444,7 @@ class HelpDialog:
                 ('    "inputs": [{"pin": 1, "name": "1A"}],\n', "code"),
                 ('    "outputs": [{"pin": 3, "name": "1Y"}]\n', "code"),
                 ('  },\n', "code"),
+                ('  "arduinoMapping": {"io": {"1": 22}},\n', "code"),
                 ('  "testSequence": {"tests": [...]}\n', "code"),
                 ('}\n\n', "code"),
                 

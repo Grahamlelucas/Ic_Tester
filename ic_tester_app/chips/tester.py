@@ -8,7 +8,7 @@ IC Tester module.
 Contains the core testing logic for 74-series integrated circuits.
 
 This module handles:
-- Power verification
+- Arduino connectivity check
 - Pin connection verification  
 - Running test sequences
 - Chip identification
@@ -64,67 +64,19 @@ class ICTester:
         return False
     
     # =========================================================================
-    # Power Verification
+    # Arduino Connectivity Check
     # =========================================================================
     
-    def verify_power(self, chip_data: Dict, progress_callback: ProgressCallback = None, 
-                     external_power: bool = False) -> Tuple[bool, str]:
+    def verify_arduino(self, progress_callback: ProgressCallback = None) -> Tuple[bool, str]:
         """
-        Verify that power (VCC/GND) is properly configured for the chip.
-        
-        This check ensures:
-        1. Chip definition has VCC and GND pins defined
-        2. Power mapping exists in chip definition (unless external_power=True)
-        3. Arduino is responding to commands
-        
-        Args:
-            chip_data: Chip definition dictionary
-            progress_callback: Optional function for progress updates
-            external_power: If True, skip Arduino power mapping check (using external supply)
+        Verify that Arduino is responding to commands.
         
         Returns:
             Tuple of (success: bool, message: str)
         """
-        pinout = chip_data.get('pinout', {})
-        mapping = chip_data.get('arduinoMapping', {})
-        
-        # Check if power pins are defined in chip data
-        vcc_pin = pinout.get('vcc')
-        gnd_pin = pinout.get('gnd')
-        
-        if not vcc_pin or not gnd_pin:
-            logger.warning("Chip definition missing VCC or GND pin configuration")
-            return (False, "Chip definition missing VCC or GND pin configuration")
-        
-        # External power mode - skip Arduino power mapping check
-        if external_power:
-            if progress_callback:
-                progress_callback(f"🔋 External power mode: VCC=pin {vcc_pin}, GND=pin {gnd_pin}")
-                progress_callback("   (Power supplied by external breadboard module)")
-        else:
-            # Check if power mapping exists
-            power_mapping = mapping.get('power', {})
-            if not power_mapping:
-                logger.warning("Chip definition missing power pin mapping")
-                return (False, "Chip definition missing power pin mapping to Arduino")
-            
-            # Verify VCC is mapped to 5V
-            vcc_mapping = power_mapping.get(str(vcc_pin))
-            if vcc_mapping != "5V":
-                return (False, f"VCC (pin {vcc_pin}) should be connected to Arduino 5V, got: {vcc_mapping}")
-            
-            # Verify GND is mapped to GND
-            gnd_mapping = power_mapping.get(str(gnd_pin))
-            if gnd_mapping != "GND":
-                return (False, f"GND (pin {gnd_pin}) should be connected to Arduino GND, got: {gnd_mapping}")
-            
-            if progress_callback:
-                progress_callback(f"⚡ Power config: VCC=pin {vcc_pin}→5V, GND=pin {gnd_pin}→GND")
-        
         # Clear any stale data in serial buffer before PING
         self.arduino.clear_buffer()
-        import time
-        time.sleep(0.1)  # Brief pause after clearing
+        time.sleep(0.1)
         
         # Send a test command to verify Arduino is responding (with retries)
         max_retries = 3
@@ -133,17 +85,16 @@ class ICTester:
             if response and "PONG" in response:
                 break
             logger.debug(f"PING attempt {attempt + 1}/{max_retries} failed, response: {response}")
-            time.sleep(0.2)  # Brief pause between retries
+            time.sleep(0.2)
         else:
-            # All retries failed
             logger.error(f"Arduino not responding to PING after {max_retries} attempts")
             return (False, "Arduino not responding - check USB connection")
         
         if progress_callback:
             progress_callback("✅ Arduino responding to commands")
         
-        logger.info("Power verification passed" + (" (external power)" if external_power else ""))
-        return (True, "Power configuration verified")
+        logger.info("Arduino connectivity check passed")
+        return (True, "Arduino connected and responding")
     
     # =========================================================================
     # Pin Connection Verification
@@ -484,13 +435,12 @@ class ICTester:
     
     def run_test(self, chip_id: str, progress_callback: ProgressCallback = None,
                  custom_mapping: Optional[Dict] = None,
-                 external_power: bool = False,
-                 board: str = "MEGA") -> Dict[str, Any]:
+                 board: str = "MEGA", **kwargs) -> Dict[str, Any]:
         """
         Run complete test sequence for a chip.
         
         This is the main testing method that:
-        1. Verifies power configuration
+        1. Verifies Arduino connectivity
         2. Verifies pin connections
         3. Runs all tests from the chip's test sequence
         4. Collects and returns results
@@ -501,23 +451,10 @@ class ICTester:
             custom_mapping: Optional user-defined Arduino pin mapping
                            {chip_pin_str: arduino_pin_int}
                            Overrides the JSON-defined arduinoMapping if provided
-            external_power: If True, skip Arduino power check (using external supply)
             board: Board profile to use when resolving chip data
         
         Returns:
-            Dictionary with test results:
-            {
-                'chipId': str,
-                'chipName': str,
-                'testsRun': int,
-                'testsPassed': int,
-                'testsFailed': int,
-                'testDetails': list,
-                'success': bool,
-                'powerVerified': bool,
-                'pinsVerified': bool,
-                'error': str (if failed)
-            }
+            Dictionary with test results
         """
         logger.info(f"Starting test for chip {chip_id}")
         
@@ -532,10 +469,8 @@ class ICTester:
         # Use custom mapping if provided
         if custom_mapping:
             chip_data = chip_data.copy()
-            existing = chip_data.get("arduinoMapping", {})
             chip_data['arduinoMapping'] = {
                 'io': custom_mapping,
-                'power': existing.get("power", {}),
             }
             if progress_callback:
                 progress_callback(f"📌 Using user-defined pin mapping ({len(custom_mapping)} pins)")
@@ -551,28 +486,20 @@ class ICTester:
             "testsFailed": 0,
             "testDetails": [],
             "success": False,
-            "powerVerified": False,
             "pinsVerified": False
         }
         
-        # Step 1: Verify power
+        # Step 1: Verify Arduino connectivity
         if progress_callback:
-            if external_power:
-                progress_callback("🔋 Using external power supply...")
-            else:
-                progress_callback("🔌 Verifying power configuration...")
+            progress_callback("🔌 Checking Arduino connection...")
         
-        power_ok, power_msg = self.verify_power(chip_data, progress_callback, external_power)
-        results["powerVerified"] = power_ok
+        arduino_ok, arduino_msg = self.verify_arduino(progress_callback)
         
-        if not power_ok:
+        if not arduino_ok:
             if progress_callback:
-                progress_callback(f"❌ Power check failed: {power_msg}")
-            results["error"] = f"Power verification failed: {power_msg}"
+                progress_callback(f"❌ Connection check failed: {arduino_msg}")
+            results["error"] = f"Arduino check failed: {arduino_msg}"
             return results
-        
-        if progress_callback:
-            progress_callback("✅ Power check passed")
         
         # Step 2: Verify pin connections
         pins_ok, pins_msg, problem_pins = self.verify_pin_connections(chip_data, progress_callback)

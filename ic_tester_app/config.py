@@ -25,16 +25,9 @@ class Config:
     CHIPS_DIR = BASE_DIR / "chips"
     PIN_MAPPINGS_DIR = BASE_DIR / "pin_mappings"
     LOGS_DIR = BASE_DIR / "logs"
-    EXCEL_LIBRARY_PATH = CHIPS_DIR / "chip_library.xlsx"
-    
-    # Data source mode: "json", "excel", "hybrid"
-    DATA_SOURCE_MODE = "hybrid"
     
     # Default board profile for mapping resolution
     DEFAULT_BOARD = "MEGA"
-    
-    # Hybrid mode fallback behavior
-    HYBRID_FALLBACK_TO_JSON = True
     
     # Arduino Settings
     SERIAL_BAUD_RATE = 9600

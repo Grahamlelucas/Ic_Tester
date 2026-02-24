@@ -10,7 +10,7 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 2. Clone or download this repository
 3. Install dependencies:
    ```
-   pip install pyserial openpyxl
+   pip install pyserial
    ```
 4. Run the application:
    ```
@@ -22,7 +22,7 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 1. Install Python 3.8+ (if not already installed)
 2. Install dependencies:
    ```
-   pip install pyserial openpyxl
+   pip install pyserial
    ```
 3. Run the application:
    ```
@@ -33,7 +33,6 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 
 - Python 3.8+
 - pyserial (Arduino communication)
-- openpyxl (Excel import/export)
 - Arduino Mega 2560 with custom shield
 - Tkinter (included with Python)
 
@@ -42,7 +41,6 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 - GUI interface for chip testing
 - Arduino Mega 2560 integration
 - Chip database with JSON definitions
-- Excel import/export functionality
 - Session logging
 - Build script for standalone executable
 
@@ -51,7 +49,7 @@ A GUI application for testing 74-series IC chips using Arduino Mega 2560.
 - `run_ic_tester.py` - Main entry point
 - `ic_tester_app/` - Modular application code
 - `chips/` - Chip definition files
-- `ic_tester_lcd_combined.ino` - Arduino firmware
+- `ic_tester_lcd_combined/` - Arduino firmware
 - `build_app.py` - Build standalone executable
 
 ## Building Standalone Executable

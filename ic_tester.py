@@ -210,50 +210,22 @@ class ICTester:
         self.arduino = arduino_conn
         self.chip_db = chip_db
     
-    def verify_power(self, chip_data, progress_callback=None):
+    def verify_arduino(self, progress_callback=None):
         """
-        Verify that power (VCC/GND) is properly configured for the chip.
+        Verify that Arduino is responding to commands.
         Returns tuple: (success: bool, message: str)
         """
-        pinout = chip_data.get('pinout', {})
-        mapping = chip_data.get('arduinoMapping', {})
-        
-        # Check if power pins are defined in chip data
-        vcc_pin = pinout.get('vcc')
-        gnd_pin = pinout.get('gnd')
-        
-        if not vcc_pin or not gnd_pin:
-            return (False, "Chip definition missing VCC or GND pin configuration")
-        
-        # Check if power mapping exists
-        power_mapping = mapping.get('power', {})
-        if not power_mapping:
-            return (False, "Chip definition missing power pin mapping to Arduino")
-        
-        # Verify VCC is mapped to 5V
-        vcc_mapping = power_mapping.get(str(vcc_pin))
-        if vcc_mapping != "5V":
-            return (False, f"VCC (pin {vcc_pin}) should be connected to Arduino 5V, got: {vcc_mapping}")
-        
-        # Verify GND is mapped to GND
-        gnd_mapping = power_mapping.get(str(gnd_pin))
-        if gnd_mapping != "GND":
-            return (False, f"GND (pin {gnd_pin}) should be connected to Arduino GND, got: {gnd_mapping}")
-        
-        if progress_callback:
-            progress_callback(f"⚡ Power config: VCC=pin {vcc_pin}→5V, GND=pin {gnd_pin}→GND")
-        
-        # Send a test command to verify Arduino is responding (power check)
+        # Send a test command to verify Arduino is responding
         self.arduino.send_command("PING")
         response = self.arduino.read_response()
         
         if not response or "PONG" not in response:
-            return (False, "Arduino not responding - check USB connection and power")
+            return (False, "Arduino not responding - check USB connection")
         
         if progress_callback:
-            progress_callback("⚡ Arduino power verified - responding to commands")
+            progress_callback("✅ Arduino responding to commands")
         
-        return (True, "Power configuration verified")
+        return (True, "Arduino connected and responding")
     
     def verify_pin_connections(self, chip_data, progress_callback=None):
         """
@@ -661,25 +633,20 @@ class ICTester:
             "testsPassed": 0,
             "testsFailed": 0,
             "testDetails": [],
-            "success": False,
-            "powerVerified": False
+            "success": False
         }
         
-        # Verify power configuration first
+        # Verify Arduino connectivity first
         if progress_callback:
-            progress_callback("🔌 Verifying power configuration...")
+            progress_callback("🔌 Checking Arduino connection...")
         
-        power_ok, power_msg = self.verify_power(chip_data, progress_callback)
-        results["powerVerified"] = power_ok
+        arduino_ok, arduino_msg = self.verify_arduino(progress_callback)
         
-        if not power_ok:
+        if not arduino_ok:
             if progress_callback:
-                progress_callback(f"❌ Power check failed: {power_msg}")
-            results["error"] = f"Power verification failed: {power_msg}"
+                progress_callback(f"❌ Connection check failed: {arduino_msg}")
+            results["error"] = f"Arduino check failed: {arduino_msg}"
             return results
-        
-        if progress_callback:
-            progress_callback("✅ Power check passed")
         
         # Verify pin connections
         pins_ok, pins_msg, problem_pins = self.verify_pin_connections(chip_data, progress_callback)

@@ -242,13 +242,6 @@ class ChipEducator:
             explanation["summary"] = self._explain_failure(chip_id, results)
             
             # Learning points from failure
-            if not results.get('powerVerified', True):
-                explanation["learning_points"].extend([
-                    "Power is the first thing to check on any IC",
-                    "VCC (usually pin 14) needs +5V, GND (usually pin 7) needs ground",
-                    "Without proper power, no tests can succeed"
-                ])
-            
             if not results.get('pinsVerified', True):
                 explanation["learning_points"].extend([
                     "Each wire must connect the correct chip pin to Arduino pin",
@@ -284,10 +277,6 @@ class ChipEducator:
     
     def _explain_failure(self, chip_id: str, results: Dict[str, Any]) -> str:
         """Generate a human-readable failure explanation"""
-        if not results.get('powerVerified', True):
-            return (f"❌ Power verification failed for {chip_id}. "
-                   f"The chip doesn't appear to be powered correctly.")
-        
         if not results.get('pinsVerified', True):
             return (f"❌ Pin connection issues detected for {chip_id}. "
                    f"Some wires may be loose or connected to wrong pins.")

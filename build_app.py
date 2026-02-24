@@ -51,7 +51,6 @@ def build_app():
         "--hidden-import", "tkinter.scrolledtext",
         "--hidden-import", "tkinter.messagebox",
         "--hidden-import", "tkinter.font",
-        "--hidden-import", "openpyxl",
         
         # The main script
         "ic_tester.py"

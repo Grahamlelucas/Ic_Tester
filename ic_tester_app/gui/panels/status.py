@@ -124,11 +124,6 @@ class StatusPanel:
         self.indicator.set_failed()
         self.result_text.config(text="TESTS FAILED", fg=Theme.ACCENT_ERROR)
     
-    def set_power_error(self):
-        """Set status to power error"""
-        self.indicator.set_failed()
-        self.result_text.config(text="POWER ERROR", fg=Theme.ACCENT_ERROR)
-    
     def set_pin_error(self):
         """Set status to pin connection error"""
         self.indicator.set_failed()

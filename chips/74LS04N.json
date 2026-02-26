@@ -1,0 +1,195 @@
+{
+  "chipId": "74LS04N",
+  "name": "Hex Inverter",
+  "manufacturer": "Texas Instruments",
+  "package": "14-pin DIP",
+  "description": "Six independent inverter gates. Output is the logical complement of the input.",
+
+  "pinout": {
+    "vcc": 14,
+    "gnd": 7,
+    "inputs": [
+      { "pin": 1, "name": "1A", "description": "Gate 1 Input" },
+      { "pin": 3, "name": "2A", "description": "Gate 2 Input" },
+      { "pin": 5, "name": "3A", "description": "Gate 3 Input" },
+      { "pin": 9, "name": "4A", "description": "Gate 4 Input" },
+      { "pin": 11, "name": "5A", "description": "Gate 5 Input" },
+      { "pin": 13, "name": "6A", "description": "Gate 6 Input" }
+    ],
+    "outputs": [
+      { "pin": 2, "name": "1Y", "description": "Gate 1 Output" },
+      { "pin": 4, "name": "2Y", "description": "Gate 2 Output" },
+      { "pin": 6, "name": "3Y", "description": "Gate 3 Output" },
+      { "pin": 8, "name": "4Y", "description": "Gate 4 Output" },
+      { "pin": 10, "name": "5Y", "description": "Gate 5 Output" },
+      { "pin": 12, "name": "6Y", "description": "Gate 6 Output" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins",
+    "power": {
+      "14": "5V",
+      "7": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "8": 28,
+      "9": 29,
+      "10": 30,
+      "11": 31,
+      "12": 32,
+      "13": 33
+    }
+  },
+
+  "testSequence": {
+    "description": "Full inverter truth table test for all 6 gates",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {
+          "1A": "LOW", "2A": "LOW", "3A": "LOW",
+          "4A": "LOW", "5A": "LOW", "6A": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "All inputs LOW - all outputs HIGH (NOT 0 = 1)",
+        "inputs": {
+          "1A": "LOW", "2A": "LOW", "3A": "LOW",
+          "4A": "LOW", "5A": "LOW", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "HIGH", "3Y": "HIGH",
+          "4Y": "HIGH", "5Y": "HIGH", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "All inputs HIGH - all outputs LOW (NOT 1 = 0)",
+        "inputs": {
+          "1A": "HIGH", "2A": "HIGH", "3A": "HIGH",
+          "4A": "HIGH", "5A": "HIGH", "6A": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW", "2Y": "LOW", "3Y": "LOW",
+          "4Y": "LOW", "5Y": "LOW", "6Y": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Gate 1 HIGH, rest LOW - isolate Gate 1",
+        "inputs": {
+          "1A": "HIGH", "2A": "LOW", "3A": "LOW",
+          "4A": "LOW", "5A": "LOW", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW", "2Y": "HIGH", "3Y": "HIGH",
+          "4Y": "HIGH", "5Y": "HIGH", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Gate 2 HIGH, rest LOW - isolate Gate 2",
+        "inputs": {
+          "1A": "LOW", "2A": "HIGH", "3A": "LOW",
+          "4A": "LOW", "5A": "LOW", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "LOW", "3Y": "HIGH",
+          "4Y": "HIGH", "5Y": "HIGH", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Gate 3 HIGH, rest LOW - isolate Gate 3",
+        "inputs": {
+          "1A": "LOW", "2A": "LOW", "3A": "HIGH",
+          "4A": "LOW", "5A": "LOW", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "HIGH", "3Y": "LOW",
+          "4Y": "HIGH", "5Y": "HIGH", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Gate 4 HIGH, rest LOW - isolate Gate 4",
+        "inputs": {
+          "1A": "LOW", "2A": "LOW", "3A": "LOW",
+          "4A": "HIGH", "5A": "LOW", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "HIGH", "3Y": "HIGH",
+          "4Y": "LOW", "5Y": "HIGH", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Gate 5 HIGH, rest LOW - isolate Gate 5",
+        "inputs": {
+          "1A": "LOW", "2A": "LOW", "3A": "LOW",
+          "4A": "LOW", "5A": "HIGH", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "HIGH", "3Y": "HIGH",
+          "4Y": "HIGH", "5Y": "LOW", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Gate 6 HIGH, rest LOW - isolate Gate 6",
+        "inputs": {
+          "1A": "LOW", "2A": "LOW", "3A": "LOW",
+          "4A": "LOW", "5A": "LOW", "6A": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "HIGH", "3Y": "HIGH",
+          "4Y": "HIGH", "5Y": "HIGH", "6Y": "LOW"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "Odd gates HIGH, even gates LOW",
+        "inputs": {
+          "1A": "HIGH", "2A": "LOW", "3A": "HIGH",
+          "4A": "LOW", "5A": "HIGH", "6A": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW", "2Y": "HIGH", "3Y": "LOW",
+          "4Y": "HIGH", "5Y": "LOW", "6Y": "HIGH"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "Even gates HIGH, odd gates LOW",
+        "inputs": {
+          "1A": "LOW", "2A": "HIGH", "3A": "LOW",
+          "4A": "HIGH", "5A": "LOW", "6A": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH", "2Y": "LOW", "3Y": "HIGH",
+          "4Y": "LOW", "5Y": "HIGH", "6Y": "LOW"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "74LS04N is the LS (Low-power Schottky) version of the 7404 Hex Inverter",
+    "NOT truth table: 0->1 | 1->0",
+    "Each gate is independent with its own input and output",
+    "Propagation delay: ~9ns typical (LS series)",
+    "Pin layout mirrors the 7414 Schmitt-trigger inverter but without hysteresis"
+  ]
+}

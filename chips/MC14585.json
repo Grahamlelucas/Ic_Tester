@@ -1,0 +1,221 @@
+{
+  "chipId": "MC14585",
+  "name": "4-Bit Magnitude Comparator (CMOS)",
+  "manufacturer": "Motorola",
+  "package": "16-pin DIP",
+  "description": "CMOS 4-bit magnitude comparator (CD4585 equivalent). Compares two 4-bit binary numbers and provides A>B, A=B, A<B outputs. NOTE: Different pinout from 7485/74LS85.",
+
+  "pinout": {
+    "vcc": 16,
+    "gnd": 8,
+    "inputs": [
+      { "pin": 4, "name": "IA>B", "description": "Cascade input A>B" },
+      { "pin": 5, "name": "IA=B", "description": "Cascade input A=B" },
+      { "pin": 6, "name": "IA<B", "description": "Cascade input A<B" },
+      { "pin": 7, "name": "B0", "description": "Data B bit 0 (LSB)" },
+      { "pin": 9, "name": "A0", "description": "Data A bit 0 (LSB)" },
+      { "pin": 10, "name": "B1", "description": "Data B bit 1" },
+      { "pin": 11, "name": "A1", "description": "Data A bit 1" },
+      { "pin": 12, "name": "B2", "description": "Data B bit 2" },
+      { "pin": 13, "name": "A2", "description": "Data A bit 2" },
+      { "pin": 14, "name": "B3", "description": "Data B bit 3 (MSB)" },
+      { "pin": 15, "name": "A3", "description": "Data A bit 3 (MSB)" }
+    ],
+    "outputs": [
+      { "pin": 1, "name": "OA<B", "description": "Output A less than B" },
+      { "pin": 2, "name": "OA=B", "description": "Output A equals B" },
+      { "pin": 3, "name": "OA>B", "description": "Output A greater than B" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins. WARNING: Pinout differs from 7485/74LS85!",
+    "power": {
+      "16": "5V",
+      "8": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "7": 28,
+      "9": 29,
+      "10": 30,
+      "11": 31,
+      "12": 32,
+      "13": 33,
+      "14": 34,
+      "15": 35
+    }
+  },
+
+  "testSequence": {
+    "description": "4-bit magnitude comparator tests. Cascade: IA=B=HIGH, IA>B=LOW, IA<B=LOW for standalone use.",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all data inputs LOW, set cascade for standalone (IA=B HIGH)",
+        "pins": {
+          "A3": "LOW", "A2": "LOW", "A1": "LOW", "A0": "LOW",
+          "B3": "LOW", "B2": "LOW", "B1": "LOW", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "A=0000, B=0000 (equal) with cascade A=B - output A=B HIGH",
+        "inputs": {
+          "A3": "LOW", "A2": "LOW", "A1": "LOW", "A0": "LOW",
+          "B3": "LOW", "B2": "LOW", "B1": "LOW", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "HIGH",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "A=1111 (15), B=0000 (0) - A greater than B",
+        "inputs": {
+          "A3": "HIGH", "A2": "HIGH", "A1": "HIGH", "A0": "HIGH",
+          "B3": "LOW", "B2": "LOW", "B1": "LOW", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "HIGH",
+          "OA=B": "LOW",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "A=0000 (0), B=1111 (15) - A less than B",
+        "inputs": {
+          "A3": "LOW", "A2": "LOW", "A1": "LOW", "A0": "LOW",
+          "B3": "HIGH", "B2": "HIGH", "B1": "HIGH", "B0": "HIGH",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "LOW",
+          "OA<B": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "A=1010 (10), B=0101 (5) - A greater than B",
+        "inputs": {
+          "A3": "HIGH", "A2": "LOW", "A1": "HIGH", "A0": "LOW",
+          "B3": "LOW", "B2": "HIGH", "B1": "LOW", "B0": "HIGH",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "HIGH",
+          "OA=B": "LOW",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "A=0101 (5), B=1010 (10) - A less than B",
+        "inputs": {
+          "A3": "LOW", "A2": "HIGH", "A1": "LOW", "A0": "HIGH",
+          "B3": "HIGH", "B2": "LOW", "B1": "HIGH", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "LOW",
+          "OA<B": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "A=1001 (9), B=0110 (6) - A greater than B",
+        "inputs": {
+          "A3": "HIGH", "A2": "LOW", "A1": "LOW", "A0": "HIGH",
+          "B3": "LOW", "B2": "HIGH", "B1": "HIGH", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "HIGH",
+          "OA=B": "LOW",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "A=1111, B=1111 (equal) - cascade A=B active",
+        "inputs": {
+          "A3": "HIGH", "A2": "HIGH", "A1": "HIGH", "A0": "HIGH",
+          "B3": "HIGH", "B2": "HIGH", "B1": "HIGH", "B0": "HIGH",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "HIGH",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "A=B=1010, cascade A>B - when equal, cascade determines output",
+        "inputs": {
+          "A3": "HIGH", "A2": "LOW", "A1": "HIGH", "A0": "LOW",
+          "B3": "HIGH", "B2": "LOW", "B1": "HIGH", "B0": "LOW",
+          "IA>B": "HIGH", "IA=B": "LOW", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "HIGH",
+          "OA=B": "LOW",
+          "OA<B": "LOW"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "A=B=0101, cascade A<B - when equal, cascade determines output",
+        "inputs": {
+          "A3": "LOW", "A2": "HIGH", "A1": "LOW", "A0": "HIGH",
+          "B3": "LOW", "B2": "HIGH", "B1": "LOW", "B0": "HIGH",
+          "IA>B": "LOW", "IA=B": "LOW", "IA<B": "HIGH"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "LOW",
+          "OA<B": "HIGH"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "A=0001 (1), B=0010 (2) - test LSB comparison",
+        "inputs": {
+          "A3": "LOW", "A2": "LOW", "A1": "LOW", "A0": "HIGH",
+          "B3": "LOW", "B2": "LOW", "B1": "HIGH", "B0": "LOW",
+          "IA>B": "LOW", "IA=B": "HIGH", "IA<B": "LOW"
+        },
+        "expectedOutputs": {
+          "OA>B": "LOW",
+          "OA=B": "LOW",
+          "OA<B": "HIGH"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "MC14585 is Motorola's CMOS 4-bit magnitude comparator (CD4585 equivalent)",
+    "WARNING: Pinout is DIFFERENT from 7485/74LS85/MM74C85N!",
+    "Outputs on pins 1-3, cascade inputs on pins 4-6 (7485 has cascade on 2-4, outputs on 5-7)",
+    "CP7618 may appear as alternate marking on the same physical chip",
+    "CMOS technology: wide supply range 3-18V, very low quiescent power",
+    "For standalone use: set IA=B=HIGH, IA>B=LOW, IA<B=LOW"
+  ]
+}

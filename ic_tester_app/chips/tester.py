@@ -497,9 +497,27 @@ class ICTester:
             "testsPassed": 0,
             "testsFailed": 0,
             "testDetails": [],
+            "failedTests": [],
+            "pinDiagnostics": {},
             "success": False,
             "pinsVerified": False
         }
+
+        # Pre-populate pinDiagnostics for every output pin
+        for out_pin in chip_data.get('pinout', {}).get('outputs', []):
+            pin_name = out_pin['name']
+            results['pinDiagnostics'][pin_name] = {
+                'chipPin': out_pin['pin'],
+                'arduinoPin': chip_data.get('arduinoMapping', {}).get('io', {}).get(str(out_pin['pin'])),
+                'timesTested': 0,
+                'timesCorrect': 0,
+                'timesWrong': 0,
+                'timesError': 0,
+                'stuckState': None,
+                'allReadValues': [],
+                'failedTestIds': [],
+                'wrongReadings': []
+            }
         
         # Step 1: Verify Arduino connectivity
         if progress_callback:
@@ -600,18 +618,55 @@ class ICTester:
                 "actualOutputs": actual_outputs
             }
             results['testDetails'].append(test_result)
-            
+
+            # Update per-pin diagnostics
+            for pin_name, expected_state in test['expectedOutputs'].items():
+                actual_state = actual_outputs.get(pin_name)
+                diag = results['pinDiagnostics'].get(pin_name)
+                if diag is not None:
+                    diag['timesTested'] += 1
+                    diag['allReadValues'].append(actual_state)
+                    if actual_state is None or actual_state == 'ERROR':
+                        diag['timesError'] += 1
+                        diag['failedTestIds'].append(test_id)
+                    elif actual_state == expected_state:
+                        diag['timesCorrect'] += 1
+                    else:
+                        diag['timesWrong'] += 1
+                        diag['failedTestIds'].append(test_id)
+                        diag['wrongReadings'].append({
+                            'testId': test_id,
+                            'expected': expected_state,
+                            'actual': actual_state
+                        })
+
             if test_passed:
                 results['testsPassed'] += 1
                 if progress_callback:
                     progress_callback(f"  ✅ PASS")
             else:
                 results['testsFailed'] += 1
+                results['failedTests'].append(test_result)
                 if progress_callback:
                     progress_callback(f"  ❌ FAIL")
         
         results['success'] = results['testsFailed'] == 0
-        
+
+        # Finalize per-pin diagnostics: detect stuck pins
+        for pin_name, diag in results['pinDiagnostics'].items():
+            reads = diag['allReadValues']
+            valid_reads = [r for r in reads if r in ('HIGH', 'LOW')]
+            if valid_reads:
+                unique = set(valid_reads)
+                if len(unique) == 1:
+                    only_val = unique.pop()
+                    if diag['timesWrong'] > 0 or diag['timesError'] > 0:
+                        diag['stuckState'] = only_val
+                elif diag['timesWrong'] > 0 and diag['timesCorrect'] > 0:
+                    diag['stuckState'] = 'INTERMITTENT'
+            elif diag['timesError'] == diag['timesTested'] and diag['timesTested'] > 0:
+                diag['stuckState'] = 'NO_RESPONSE'
+
         logger.info(f"Test complete: {results['testsPassed']}/{results['testsRun']} passed")
         return results
     

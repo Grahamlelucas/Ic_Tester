@@ -1,0 +1,206 @@
+{
+  "chipId": "MC1489AP",
+  "name": "Quad Line Receiver (RS-232)",
+  "manufacturer": "Motorola",
+  "package": "14-pin DIP",
+  "description": "Four independent RS-232 line receivers. Converts RS-232 level signals to TTL-compatible outputs. Inverting: positive input gives LOW output.",
+
+  "pinout": {
+    "vcc": 14,
+    "gnd": 7,
+    "inputs": [
+      { "pin": 1, "name": "1A", "description": "Receiver 1 Input" },
+      { "pin": 2, "name": "1C", "description": "Receiver 1 Response Control" },
+      { "pin": 4, "name": "2A", "description": "Receiver 2 Input" },
+      { "pin": 5, "name": "2C", "description": "Receiver 2 Response Control" },
+      { "pin": 9, "name": "3C", "description": "Receiver 3 Response Control" },
+      { "pin": 10, "name": "3A", "description": "Receiver 3 Input" },
+      { "pin": 12, "name": "4C", "description": "Receiver 4 Response Control" },
+      { "pin": 13, "name": "4A", "description": "Receiver 4 Input" }
+    ],
+    "outputs": [
+      { "pin": 3, "name": "1Y", "description": "Receiver 1 Output" },
+      { "pin": 6, "name": "2Y", "description": "Receiver 2 Output" },
+      { "pin": 8, "name": "3Y", "description": "Receiver 3 Output" },
+      { "pin": 11, "name": "4Y", "description": "Receiver 4 Output" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins",
+    "power": {
+      "14": "5V",
+      "7": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "8": 28,
+      "9": 29,
+      "10": 30,
+      "11": 31,
+      "12": 32,
+      "13": 33
+    }
+  },
+
+  "testSequence": {
+    "description": "RS-232 receiver test with control pins LOW (normal threshold). MC1489 is inverting: HIGH input -> LOW output, LOW input -> HIGH output.",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW, control pins LOW for normal operation",
+        "pins": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "All inputs LOW, controls LOW - all outputs HIGH (inverting receiver)",
+        "inputs": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "All inputs HIGH, controls LOW - all outputs LOW (inverting)",
+        "inputs": {
+          "1A": "HIGH", "1C": "LOW",
+          "2A": "HIGH", "2C": "LOW",
+          "3A": "HIGH", "3C": "LOW",
+          "4A": "HIGH", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "LOW",
+          "3Y": "LOW",
+          "4Y": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Receiver 1 HIGH, rest LOW - isolate Receiver 1",
+        "inputs": {
+          "1A": "HIGH", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Receiver 2 HIGH, rest LOW - isolate Receiver 2",
+        "inputs": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "HIGH", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW",
+          "3Y": "HIGH",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Receiver 3 HIGH, rest LOW - isolate Receiver 3",
+        "inputs": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "HIGH", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "LOW",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Receiver 4 HIGH, rest LOW - isolate Receiver 4",
+        "inputs": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "HIGH", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH",
+          "3Y": "HIGH",
+          "4Y": "LOW"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Alternating: Receivers 1,3 HIGH - Receivers 2,4 LOW",
+        "inputs": {
+          "1A": "HIGH", "1C": "LOW",
+          "2A": "LOW", "2C": "LOW",
+          "3A": "HIGH", "3C": "LOW",
+          "4A": "LOW", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH",
+          "3Y": "LOW",
+          "4Y": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Alternating: Receivers 2,4 HIGH - Receivers 1,3 LOW",
+        "inputs": {
+          "1A": "LOW", "1C": "LOW",
+          "2A": "HIGH", "2C": "LOW",
+          "3A": "LOW", "3C": "LOW",
+          "4A": "HIGH", "4C": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW",
+          "3Y": "HIGH",
+          "4Y": "LOW"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "MC1489AP is a quad RS-232 line receiver (Motorola equivalent of SN75189)",
+    "Inverting function: positive RS-232 input produces TTL LOW output",
+    "Response control pins (C) adjust input threshold - tie LOW for normal operation",
+    "Input threshold is approximately +1.25V typical",
+    "Operates on +5V supply, outputs are TTL-compatible",
+    "Tests use TTL levels (0V/5V) which are sufficient for basic functional verification"
+  ]
+}

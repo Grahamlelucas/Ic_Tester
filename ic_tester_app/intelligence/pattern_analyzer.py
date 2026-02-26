@@ -240,12 +240,25 @@ class PatternAnalyzer:
     
     def _analyze_test_failures(self, chip_id: str, results: Dict[str, Any],
                               pin_mapping: Dict[str, int]) -> List[WiringMistake]:
-        """Analyze functional test failures"""
+        """Analyze functional test failures using testDetails and pinDiagnostics"""
         mistakes = []
-        failed_tests = results.get('failedTests', [])
+        failed_tests = results.get('failedTests', results.get('testDetails', []))
+        # Filter to only actually-failed tests if using testDetails
+        if failed_tests and 'passed' in (failed_tests[0] if failed_tests else {}):
+            failed_tests = [t for t in failed_tests if not t.get('passed', True)]
         tests_run = results.get('testsRun', 0)
         tests_failed = results.get('testsFailed', 0)
-        
+        pin_diag = results.get('pinDiagnostics', {})
+
+        # -- Stuck-pin analysis from pinDiagnostics --
+        stuck_pins = self._analyze_stuck_pins(pin_diag)
+        mistakes.extend(stuck_pins)
+
+        # -- Inverted-output detection --
+        inverted = self._detect_inverted_outputs(pin_diag)
+        if inverted:
+            mistakes.extend(inverted)
+
         # All tests failed
         if tests_run > 0 and tests_failed == tests_run:
             mistakes.append(WiringMistake(
@@ -266,17 +279,17 @@ class PatternAnalyzer:
         
         # Partial failures - analyze which gates/functions failed
         elif tests_failed > 0 and tests_failed < tests_run:
-            # Check for pattern of specific gate failures
+            # Identify failing output pins from testDetails
             output_failures = self._identify_failing_outputs(failed_tests, chip_id)
             
             if output_failures:
-                for output_pin in output_failures:
+                for pin_name, chip_pin in output_failures:
                     mistakes.append(WiringMistake(
                         type="output_connection_issue",
-                        description=f"Output pin {output_pin} not responding correctly",
-                        affected_pins=[output_pin],
+                        description=f"Output {pin_name} (chip pin {chip_pin}) not responding correctly",
+                        affected_pins=[chip_pin] if isinstance(chip_pin, int) else [],
                         confidence=0.7,
-                        suggested_fix=f"Check the wire connected to chip pin {output_pin}"
+                        suggested_fix=f"Check the wire connected to {pin_name} (chip pin {chip_pin})"
                     ))
             
             # Check for floating inputs
@@ -290,6 +303,77 @@ class PatternAnalyzer:
                 ))
         
         return mistakes
+
+    def _analyze_stuck_pins(self, pin_diag: Dict[str, Any]) -> List[WiringMistake]:
+        """Detect pins that are stuck HIGH, stuck LOW, or not responding"""
+        mistakes = []
+        for pin_name, diag in pin_diag.items():
+            stuck = diag.get('stuckState')
+            chip_pin = diag.get('chipPin', '?')
+            arduino_pin = diag.get('arduinoPin', '?')
+            if stuck == 'HIGH':
+                mistakes.append(WiringMistake(
+                    type="stuck_high",
+                    description=f"{pin_name} (chip pin {chip_pin}) stuck HIGH in all readings",
+                    affected_pins=[chip_pin] if isinstance(chip_pin, int) else [],
+                    confidence=0.85,
+                    suggested_fix=f"{pin_name} always reads HIGH — check if Arduino pin {arduino_pin} is shorted to 5V or if the output wire is loose"
+                ))
+            elif stuck == 'LOW':
+                mistakes.append(WiringMistake(
+                    type="stuck_low",
+                    description=f"{pin_name} (chip pin {chip_pin}) stuck LOW in all readings",
+                    affected_pins=[chip_pin] if isinstance(chip_pin, int) else [],
+                    confidence=0.85,
+                    suggested_fix=f"{pin_name} always reads LOW — check if Arduino pin {arduino_pin} is shorted to GND or wire is disconnected"
+                ))
+            elif stuck == 'NO_RESPONSE':
+                mistakes.append(WiringMistake(
+                    type="no_response",
+                    description=f"{pin_name} (chip pin {chip_pin}) returned ERROR on every read",
+                    affected_pins=[chip_pin] if isinstance(chip_pin, int) else [],
+                    confidence=0.9,
+                    suggested_fix=f"{pin_name} is not responding — verify wire between chip pin {chip_pin} and Arduino pin {arduino_pin}"
+                ))
+            elif stuck == 'INTERMITTENT':
+                mistakes.append(WiringMistake(
+                    type="intermittent",
+                    description=f"{pin_name} (chip pin {chip_pin}) gives inconsistent readings",
+                    affected_pins=[chip_pin] if isinstance(chip_pin, int) else [],
+                    confidence=0.7,
+                    suggested_fix=f"{pin_name} reads are unreliable — check for loose wire at Arduino pin {arduino_pin} or breadboard contact"
+                ))
+        return mistakes
+
+    def _detect_inverted_outputs(self, pin_diag: Dict[str, Any]) -> List[WiringMistake]:
+        """Detect if all outputs are inverted (suggests chip backwards or wrong chip)"""
+        if not pin_diag:
+            return []
+        total_pins = 0
+        inverted_pins = 0
+        for pin_name, diag in pin_diag.items():
+            wrongs = diag.get('wrongReadings', [])
+            if not wrongs:
+                continue
+            total_pins += 1
+            # Check if every wrong reading is the inverse of expected
+            all_inverted = all(
+                (w['expected'] == 'HIGH' and w['actual'] == 'LOW') or
+                (w['expected'] == 'LOW' and w['actual'] == 'HIGH')
+                for w in wrongs
+            )
+            if all_inverted:
+                inverted_pins += 1
+        
+        if total_pins > 0 and inverted_pins == total_pins:
+            return [WiringMistake(
+                type="all_outputs_inverted",
+                description="All outputs are inverted — every expected HIGH reads LOW and vice versa",
+                affected_pins=[],
+                confidence=0.8,
+                suggested_fix="Chip may be inserted backwards (rotated 180°), or a different chip with inverted logic is inserted"
+            )]
+        return []
     
     def _get_power_pins(self, chip_id: str) -> List[int]:
         """Get power pin numbers for a chip"""
@@ -300,22 +384,21 @@ class PatternAnalyzer:
         return [14, 7]  # Default for 14-pin DIPs
     
     def _identify_failing_outputs(self, failed_tests: List[Dict],
-                                  chip_id: str) -> List[int]:
-        """Identify which output pins are failing"""
-        failing_outputs = set()
+                                  chip_id: str) -> List[Tuple[str, Any]]:
+        """Identify which output pins are failing.
+        Returns list of (pin_name, chip_pin) tuples."""
+        failing_outputs = {}
         
         for test in failed_tests:
-            expected = test.get('expected', {})
-            actual = test.get('actual', {})
+            expected = test.get('expectedOutputs', test.get('expected', {}))
+            actual = test.get('actualOutputs', test.get('actual', {}))
             
-            for pin_str, exp_val in expected.items():
-                if actual.get(pin_str) != exp_val:
-                    try:
-                        failing_outputs.add(int(pin_str))
-                    except ValueError:
-                        pass
+            for pin_name, exp_val in expected.items():
+                if actual.get(pin_name) != exp_val:
+                    if pin_name not in failing_outputs:
+                        failing_outputs[pin_name] = pin_name
         
-        return list(failing_outputs)
+        return [(name, name) for name in failing_outputs.keys()]
     
     def _suggests_floating_inputs(self, failed_tests: List[Dict]) -> bool:
         """Check if failure pattern suggests floating inputs"""

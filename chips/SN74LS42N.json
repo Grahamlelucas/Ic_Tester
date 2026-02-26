@@ -1,0 +1,211 @@
+{
+  "chipId": "SN74LS42N",
+  "name": "BCD-to-Decimal Decoder (One-of-Ten)",
+  "manufacturer": "Texas Instruments",
+  "package": "16-pin DIP",
+  "description": "Decodes 4-bit BCD input (0-9) into one of ten active-LOW outputs. For valid BCD inputs, exactly one output goes LOW. Invalid inputs (10-15) produce all outputs HIGH.",
+
+  "pinout": {
+    "vcc": 16,
+    "gnd": 8,
+    "inputs": [
+      { "pin": 15, "name": "A", "description": "BCD Input A (LSB, weight 1)" },
+      { "pin": 14, "name": "B", "description": "BCD Input B (weight 2)" },
+      { "pin": 13, "name": "C", "description": "BCD Input C (weight 4)" },
+      { "pin": 12, "name": "D", "description": "BCD Input D (MSB, weight 8)" }
+    ],
+    "outputs": [
+      { "pin": 1, "name": "Y0", "description": "Output 0 (active LOW)" },
+      { "pin": 2, "name": "Y1", "description": "Output 1 (active LOW)" },
+      { "pin": 3, "name": "Y2", "description": "Output 2 (active LOW)" },
+      { "pin": 4, "name": "Y3", "description": "Output 3 (active LOW)" },
+      { "pin": 5, "name": "Y4", "description": "Output 4 (active LOW)" },
+      { "pin": 6, "name": "Y5", "description": "Output 5 (active LOW)" },
+      { "pin": 7, "name": "Y6", "description": "Output 6 (active LOW)" },
+      { "pin": 9, "name": "Y7", "description": "Output 7 (active LOW)" },
+      { "pin": 10, "name": "Y8", "description": "Output 8 (active LOW)" },
+      { "pin": 11, "name": "Y9", "description": "Output 9 (active LOW)" }
+    ],
+    "noConnect": []
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins",
+    "power": {
+      "16": "5V",
+      "8": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "3": 24,
+      "4": 25,
+      "5": 26,
+      "6": 27,
+      "7": 28,
+      "9": 29,
+      "10": 30,
+      "11": 31,
+      "12": 32,
+      "13": 33,
+      "14": 34,
+      "15": 35
+    }
+  },
+
+  "testSequence": {
+    "description": "BCD-to-decimal decoder test. Active-LOW outputs: selected output is LOW, all others HIGH.",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all BCD inputs to 0000 (select output 0)",
+        "pins": {
+          "A": "LOW", "B": "LOW", "C": "LOW", "D": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "BCD 0000 (0) - Y0 LOW, all others HIGH",
+        "inputs": {
+          "A": "LOW", "B": "LOW", "C": "LOW", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "LOW", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "BCD 0001 (1) - Y1 LOW, all others HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "LOW", "C": "LOW", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "LOW", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "BCD 0010 (2) - Y2 LOW, all others HIGH",
+        "inputs": {
+          "A": "LOW", "B": "HIGH", "C": "LOW", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "LOW", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "BCD 0011 (3) - Y3 LOW, all others HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "HIGH", "C": "LOW", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "LOW", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "BCD 0100 (4) - Y4 LOW, all others HIGH",
+        "inputs": {
+          "A": "LOW", "B": "LOW", "C": "HIGH", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "LOW",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "BCD 0101 (5) - Y5 LOW, all others HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "LOW", "C": "HIGH", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "LOW", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "BCD 0110 (6) - Y6 LOW, all others HIGH",
+        "inputs": {
+          "A": "LOW", "B": "HIGH", "C": "HIGH", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "LOW", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "BCD 0111 (7) - Y7 LOW, all others HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "HIGH", "C": "HIGH", "D": "LOW"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "LOW", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "BCD 1000 (8) - Y8 LOW, all others HIGH",
+        "inputs": {
+          "A": "LOW", "B": "LOW", "C": "LOW", "D": "HIGH"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "LOW", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "BCD 1001 (9) - Y9 LOW, all others HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "LOW", "C": "LOW", "D": "HIGH"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "LOW"
+        }
+      },
+      {
+        "testId": 11,
+        "description": "Invalid BCD 1010 (10) - all outputs HIGH",
+        "inputs": {
+          "A": "LOW", "B": "HIGH", "C": "LOW", "D": "HIGH"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      },
+      {
+        "testId": 12,
+        "description": "Invalid BCD 1111 (15) - all outputs HIGH",
+        "inputs": {
+          "A": "HIGH", "B": "HIGH", "C": "HIGH", "D": "HIGH"
+        },
+        "expectedOutputs": {
+          "Y0": "HIGH", "Y1": "HIGH", "Y2": "HIGH", "Y3": "HIGH", "Y4": "HIGH",
+          "Y5": "HIGH", "Y6": "HIGH", "Y7": "HIGH", "Y8": "HIGH", "Y9": "HIGH"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "SN74LS42N is a BCD-to-decimal (1-of-10) decoder",
+    "Outputs are ACTIVE LOW: selected output goes LOW, all others remain HIGH",
+    "Valid BCD inputs: 0000 (0) through 1001 (9)",
+    "Invalid BCD inputs (1010-1111) produce all outputs HIGH (no output selected)",
+    "Input weights: A=1, B=2, C=4, D=8",
+    "Propagation delay: ~17ns typical (LS series)"
+  ]
+}

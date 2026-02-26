@@ -255,13 +255,36 @@ class ChipEducator:
                     f"You passed {tests_passed}/{tests_total} tests ({pct:.0f}%) - "
                     f"this suggests a partial wiring issue, not a bad chip"
                 )
-            
-            # Suggest what to try
-            explanation["what_to_try_next"] = [
+
+            # Add pin-specific learning from diagnostics
+            pin_diag = results.get('pinDiagnostics', {})
+            stuck_pins = []
+            for pname, d in pin_diag.items():
+                stuck = d.get('stuckState')
+                if stuck == 'HIGH':
+                    stuck_pins.append(f"{pname} (pin {d.get('chipPin','?')}) is stuck HIGH")
+                elif stuck == 'LOW':
+                    stuck_pins.append(f"{pname} (pin {d.get('chipPin','?')}) is stuck LOW")
+                elif stuck == 'NO_RESPONSE':
+                    stuck_pins.append(f"{pname} (pin {d.get('chipPin','?')}) is not responding")
+                elif stuck == 'INTERMITTENT':
+                    stuck_pins.append(f"{pname} (pin {d.get('chipPin','?')}) has intermittent readings")
+            if stuck_pins:
+                explanation["learning_points"].append(
+                    "Pin-level issues found: " + "; ".join(stuck_pins[:3])
+                )
+
+            # Suggest what to try - pin-specific if possible
+            explanation["what_to_try_next"] = []
+            if stuck_pins:
+                explanation["what_to_try_next"].append(
+                    "Focus on the flagged pins first - check those specific wires"
+                )
+            explanation["what_to_try_next"].extend([
                 "Review your wiring carefully against the pin mapping",
                 "Check that all connections are firm",
                 "Verify the chip orientation (notch indicates pin 1)"
-            ]
+            ])
             
             # Add common mistakes for this chip
             if insight:

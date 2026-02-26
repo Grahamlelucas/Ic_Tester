@@ -1,0 +1,190 @@
+{
+  "chipId": "DM7420N",
+  "name": "Dual 4-Input NAND Gate",
+  "manufacturer": "National Semiconductor",
+  "package": "14-pin DIP",
+  "description": "Two independent 4-input NAND gates. Output is LOW only when all four inputs are HIGH.",
+
+  "pinout": {
+    "vcc": 14,
+    "gnd": 7,
+    "inputs": [
+      { "pin": 1, "name": "1A", "description": "Gate 1 Input A" },
+      { "pin": 2, "name": "1B", "description": "Gate 1 Input B" },
+      { "pin": 4, "name": "1C", "description": "Gate 1 Input C" },
+      { "pin": 5, "name": "1D", "description": "Gate 1 Input D" },
+      { "pin": 9, "name": "2A", "description": "Gate 2 Input A" },
+      { "pin": 10, "name": "2B", "description": "Gate 2 Input B" },
+      { "pin": 12, "name": "2C", "description": "Gate 2 Input C" },
+      { "pin": 13, "name": "2D", "description": "Gate 2 Input D" }
+    ],
+    "outputs": [
+      { "pin": 6, "name": "1Y", "description": "Gate 1 Output" },
+      { "pin": 8, "name": "2Y", "description": "Gate 2 Output" }
+    ],
+    "noConnect": [3, 11]
+  },
+
+  "arduinoMapping": {
+    "comment": "Maps chip I/O pins to Arduino Mega digital pins. Pins 3 and 11 are NC.",
+    "power": {
+      "14": "5V",
+      "7": "GND"
+    },
+    "io": {
+      "1": 22,
+      "2": 23,
+      "4": 24,
+      "5": 25,
+      "6": 26,
+      "8": 27,
+      "9": 28,
+      "10": 29,
+      "12": 30,
+      "13": 31
+    }
+  },
+
+  "testSequence": {
+    "description": "Full 4-input NAND truth table test for both gates",
+    "setup": [
+      {
+        "step": 1,
+        "action": "Initialize all inputs LOW",
+        "pins": {
+          "1A": "LOW", "1B": "LOW", "1C": "LOW", "1D": "LOW",
+          "2A": "LOW", "2B": "LOW", "2C": "LOW", "2D": "LOW"
+        }
+      }
+    ],
+    "tests": [
+      {
+        "testId": 1,
+        "description": "All inputs LOW - both outputs HIGH (NAND: not all 1 -> 1)",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW", "1C": "LOW", "1D": "LOW",
+          "2A": "LOW", "2B": "LOW", "2C": "LOW", "2D": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "HIGH"
+        }
+      },
+      {
+        "testId": 2,
+        "description": "All inputs HIGH - both outputs LOW (NAND: all 1 -> 0)",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "HIGH", "1D": "HIGH",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 3,
+        "description": "Gate 1 all HIGH, Gate 2 all LOW - isolate Gate 1",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "HIGH", "1D": "HIGH",
+          "2A": "LOW", "2B": "LOW", "2C": "LOW", "2D": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH"
+        }
+      },
+      {
+        "testId": 4,
+        "description": "Gate 1 all LOW, Gate 2 all HIGH - isolate Gate 2",
+        "inputs": {
+          "1A": "LOW", "1B": "LOW", "1C": "LOW", "1D": "LOW",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 5,
+        "description": "Gate 1: 3 of 4 HIGH (A LOW) - output HIGH (need all 4 for LOW)",
+        "inputs": {
+          "1A": "LOW", "1B": "HIGH", "1C": "HIGH", "1D": "HIGH",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 6,
+        "description": "Gate 1: 3 of 4 HIGH (B LOW) - output HIGH",
+        "inputs": {
+          "1A": "HIGH", "1B": "LOW", "1C": "HIGH", "1D": "HIGH",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 7,
+        "description": "Gate 1: 3 of 4 HIGH (C LOW) - output HIGH",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "LOW", "1D": "HIGH",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 8,
+        "description": "Gate 1: 3 of 4 HIGH (D LOW) - output HIGH",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "HIGH", "1D": "LOW",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "HIGH",
+          "2Y": "LOW"
+        }
+      },
+      {
+        "testId": 9,
+        "description": "Gate 2: 3 of 4 HIGH (A LOW) - output HIGH",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "HIGH", "1D": "HIGH",
+          "2A": "LOW", "2B": "HIGH", "2C": "HIGH", "2D": "HIGH"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH"
+        }
+      },
+      {
+        "testId": 10,
+        "description": "Gate 2: 3 of 4 HIGH (D LOW) - output HIGH",
+        "inputs": {
+          "1A": "HIGH", "1B": "HIGH", "1C": "HIGH", "1D": "HIGH",
+          "2A": "HIGH", "2B": "HIGH", "2C": "HIGH", "2D": "LOW"
+        },
+        "expectedOutputs": {
+          "1Y": "LOW",
+          "2Y": "HIGH"
+        }
+      }
+    ]
+  },
+
+  "notes": [
+    "DM7420N is National Semiconductor's version of the 7420 Dual 4-Input NAND",
+    "4-input NAND: output LOW only when ALL four inputs are HIGH",
+    "Pins 3 and 11 are no-connect (NC)",
+    "Functionally equivalent to SN7420, SN74LS20"
+  ]
+}

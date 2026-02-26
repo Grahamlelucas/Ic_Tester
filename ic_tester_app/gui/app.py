@@ -527,12 +527,82 @@ class ICTesterApp:
         for factor in confidence.factors[:2]:
             self._log(f"   • {factor}", "info")
         
-        if results.get('success'):
-            pass
-        else:
+        # Show per-pin diagnostic summary
+        self._show_pin_diagnostics(results)
+
+        if not results.get('success'):
             # Try to identify correct chip
             self._try_identify_wrong_chip(results)
     
+    def _show_pin_diagnostics(self, results):
+        """Show per-pin diagnostic summary from test results"""
+        pin_diag = results.get('pinDiagnostics', {})
+        if not pin_diag:
+            return
+
+        has_issues = any(
+            d.get('timesWrong', 0) > 0 or d.get('timesError', 0) > 0 or d.get('stuckState')
+            for d in pin_diag.values()
+        )
+
+        if not has_issues and results.get('success'):
+            return
+
+        self._log("\n" + "═" * 50, "info")
+        self._log("📊 PIN DIAGNOSTIC REPORT", "info")
+        self._log("═" * 50, "info")
+
+        for pin_name, diag in pin_diag.items():
+            tested = diag.get('timesTested', 0)
+            correct = diag.get('timesCorrect', 0)
+            wrong = diag.get('timesWrong', 0)
+            errors = diag.get('timesError', 0)
+            stuck = diag.get('stuckState')
+            chip_pin = diag.get('chipPin', '?')
+            arduino_pin = diag.get('arduinoPin', '?')
+
+            if tested == 0:
+                continue
+
+            pct = (correct / tested * 100) if tested > 0 else 0
+
+            if stuck == 'HIGH':
+                icon = "🔴"
+                status = f"STUCK HIGH ({correct}/{tested} correct)"
+                level = "error"
+            elif stuck == 'LOW':
+                icon = "🔵"
+                status = f"STUCK LOW ({correct}/{tested} correct)"
+                level = "error"
+            elif stuck == 'NO_RESPONSE':
+                icon = "⚫"
+                status = f"NO RESPONSE ({errors} errors)"
+                level = "error"
+            elif stuck == 'INTERMITTENT':
+                icon = "🟡"
+                status = f"INTERMITTENT ({correct}/{tested} correct)"
+                level = "warning"
+            elif wrong > 0 or errors > 0:
+                icon = "🟠"
+                status = f"{correct}/{tested} correct ({pct:.0f}%)"
+                level = "warning"
+            else:
+                icon = "🟢"
+                status = f"{correct}/{tested} correct"
+                level = "info"
+
+            self._log(f"  {icon} {pin_name} (pin {chip_pin} → Ard.{arduino_pin}): {status}", level)
+
+            # Show specific wrong readings for failing pins
+            if wrong > 0:
+                wrongs = diag.get('wrongReadings', [])
+                for w in wrongs[:3]:
+                    self._log(f"       Test {w['testId']}: expected {w['expected']}, got {w['actual']}", "warning")
+                if len(wrongs) > 3:
+                    self._log(f"       ...and {len(wrongs) - 3} more failures", "warning")
+
+        self._log("═" * 50, "info")
+
     def _log_pin_error(self, results):
         """Log pin verification error details"""
         error_msg = results.get('error', 'Pin verification failed')

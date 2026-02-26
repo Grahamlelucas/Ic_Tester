@@ -550,7 +550,27 @@ class ICTester:
         # Step 5: Run all tests
         tests = chip_data['testSequence']['tests']
         all_input_pins = [p['name'] for p in chip_data.get('pinout', {}).get('inputs', [])]
-        
+        mapping = chip_data.get('arduinoMapping', {}).get('io', {})
+
+        # Build physical-pin lookup for output pins: name → (chip_pin, arduino_pin)
+        output_pin_info = {}
+        for out_pin in chip_data.get('pinout', {}).get('outputs', []):
+            pname = out_pin['name']
+            cpin = out_pin['pin']
+            apin = mapping.get(str(cpin), '?')
+            output_pin_info[pname] = (cpin, apin)
+
+        # Same for input pins
+        input_pin_info = {}
+        for in_pin in chip_data.get('pinout', {}).get('inputs', []):
+            pname = in_pin['name']
+            cpin = in_pin['pin']
+            apin = mapping.get(str(cpin), '?')
+            input_pin_info[pname] = (cpin, apin)
+
+        # Track per-pin consecutive failure count for real-time callouts
+        pin_fail_streak = {name: 0 for name in output_pin_info}
+
         for test in tests:
             # Check for abort request
             if self._check_abort():
@@ -579,14 +599,13 @@ class ICTester:
             time.sleep(0.05)
             
             # Set test-specific inputs
-            if progress_callback:
-                progress_callback(f"    Setting test inputs: {test['inputs']}")
             for pin_name, state in test['inputs'].items():
                 if self._abort_flag:
                     break
                 success = self.set_pin_state(chip_data, pin_name, state)
                 if not success and progress_callback:
-                    progress_callback(f"    ⚠️ Failed to set {pin_name} {state}")
+                    cpin, apin = input_pin_info.get(pin_name, ('?', '?'))
+                    progress_callback(f"    ⚠️ Failed to set {pin_name} (pin {cpin} → Arduino {apin}) to {state} — CHECK WIRE")
             if self._abort_flag:
                 continue
             
@@ -595,19 +614,27 @@ class ICTester:
             # Read and verify outputs
             test_passed = True
             actual_outputs = {}
+            this_test_failures = []
             
             for pin_name, expected_state in test['expectedOutputs'].items():
                 if self._abort_flag:
                     break
                 actual_state = self.read_pin_state(chip_data, pin_name)
                 actual_outputs[pin_name] = actual_state
+                cpin, apin = output_pin_info.get(pin_name, ('?', '?'))
                 
-                if progress_callback:
-                    match = "✓" if actual_state == expected_state else "✗"
-                    progress_callback(f"    {pin_name}: got {actual_state}, expected {expected_state} {match}")
-                
-                if actual_state != expected_state:
+                if actual_state == expected_state:
+                    pin_fail_streak[pin_name] = 0
+                    if progress_callback:
+                        progress_callback(f"    ✓ {pin_name} (pin {cpin}): {actual_state}")
+                else:
                     test_passed = False
+                    pin_fail_streak[pin_name] = pin_fail_streak.get(pin_name, 0) + 1
+                    streak = pin_fail_streak[pin_name]
+                    this_test_failures.append((pin_name, cpin, apin, expected_state, actual_state, streak))
+                    if progress_callback:
+                        progress_callback(f"    ✗ {pin_name} (pin {cpin} → Arduino {apin}): "
+                                         f"got {actual_state}, expected {expected_state}")
             
             # Record result
             test_result = {
@@ -649,6 +676,18 @@ class ICTester:
                 results['failedTests'].append(test_result)
                 if progress_callback:
                     progress_callback(f"  ❌ FAIL")
+                    # Call out pins that have failed multiple tests in a row
+                    for pname, cpin, apin, exp, act, streak in this_test_failures:
+                        if streak >= 2:
+                            progress_callback(
+                                f"  ⚠️  {pname} (pin {cpin}) has failed {streak} tests in a row "
+                                f"→ CHECK WIRE to Arduino pin {apin}"
+                            )
+                        if streak >= 3:
+                            progress_callback(
+                                f"  🔌 {pname} (pin {cpin}) LIKELY UNPLUGGED "
+                                f"— always reads {act}, never {exp}"
+                            )
         
         results['success'] = results['testsFailed'] == 0
 

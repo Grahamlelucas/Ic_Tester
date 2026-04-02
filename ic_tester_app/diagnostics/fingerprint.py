@@ -5,15 +5,17 @@
 # Related: chips/database.py, diagnostics/signal_analyzer.py
 
 """
-IC Behavior Fingerprinting module.
+Behavioral fingerprinting module for unknown ICs.
 
-Identifies unknown ICs by:
-1. Running exploratory input combinations on mapped pins
-2. Building a derived truth table from observed outputs
-3. Comparing observed behavior against a library of known IC logic patterns
-4. Estimating the most likely IC family/function
+Instead of starting from a known chip definition, this subsystem explores a
+mapped chip's observed input/output behavior and tries to infer what kind of
+logic device it looks like.
 
-Works independently of predefined chip profiles when the IC type is unknown.
+Workflow:
+1. Drive exploratory input combinations.
+2. Record the observed outputs as a derived truth table.
+3. Compare that observed behavior to known gate signatures.
+4. Rank likely matches so the user has a starting point for identification.
 """
 
 import time
@@ -28,8 +30,8 @@ logger = get_logger("diagnostics.fingerprint")
 ProgressCallback = Optional[Callable[[str], None]]
 
 
-# Known logic function signatures for common 74-series gate ICs.
-# Each entry maps a gate type to its truth table (inputs → output).
+# Known logic signatures used as comparison targets once an observed truth table
+# has been captured from the physical device.
 KNOWN_GATE_SIGNATURES = {
     "AND": {(0, 0): 0, (0, 1): 0, (1, 0): 0, (1, 1): 1},
     "OR":  {(0, 0): 0, (0, 1): 1, (1, 0): 1, (1, 1): 1},
@@ -161,7 +163,8 @@ class ICFingerprinter:
                 progress_callback("  ❌ Need at least 1 input and 1 output pin mapped")
             return fp
 
-        # Build list of Arduino pins for inputs and outputs
+        # Convert the chip definition into the physical input/output wiring that
+        # exploratory probing can actually drive and observe.
         input_info = []
         for ip in input_pins:
             ard = mapping.get(str(ip["pin"]))

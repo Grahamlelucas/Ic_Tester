@@ -5,17 +5,14 @@
 # Related: arduino/connection.py, config.py
 
 """
-Performance Benchmark module.
+System performance benchmarking module.
 
-Measures and documents the practical performance limits of the IC Tester system:
-- Serial round-trip latency (PING/PONG)
-- Single pin read/write throughput
-- Batch pin operation throughput
-- Rapid sampling rate (firmware v8.0+)
-- Memory usage estimates
-- Documented hardware limits of Arduino Mega 2560
+This code measures the practical limits of the tester stack rather than the IC
+under test. The goal is to understand how fast the Arduino/serial/firmware path
+can operate so diagnostics and UI claims are grounded in measured behavior.
 
-All benchmarks run non-destructively and do not affect connected ICs.
+All benchmarks are designed to be non-destructive and safe to run with the
+standard tester setup.
 """
 
 import time
@@ -28,7 +25,7 @@ logger = get_logger("performance.benchmark")
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-# Arduino Mega 2560 documented limits
+# Reference hardware specifications used for comparison and reporting.
 MEGA_2560_SPECS = {
     "mcu": "ATmega2560",
     "clock_mhz": 16,
@@ -129,6 +126,8 @@ class PerformanceBenchmark:
         if progress_callback:
             progress_callback(f"  Firmware: v{report.firmware_version}")
 
+        # The benchmark order moves from simplest transport timing to more
+        # feature-specific operations so failures are easier to interpret.
         # 1. Serial round-trip latency
         if progress_callback:
             progress_callback(f"\n  [1/5] Serial round-trip (PING)...")

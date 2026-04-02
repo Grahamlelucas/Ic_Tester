@@ -5,17 +5,16 @@
 # Related: arduino/connection.py, ic_tester_firmware.ino (v8.0 RAPID_SAMPLE, SET_AND_TIME)
 
 """
-Signal Analyzer module.
+Signal-quality analysis module.
 
-Uses enhanced firmware commands to perform hardware-level diagnostics:
-- RAPID_SAMPLE: Take N rapid reads of a pin to detect flickering/instability
-- SET_AND_TIME: Measure propagation delay between input change and output response
-- TIMED_READ: Capture waveform samples at fixed intervals
+This subsystem uses the enhanced firmware commands to ask timing-sensitive
+questions that the normal digital tester cannot answer well, such as:
+- "Is this output stable or flickering?"
+- "How fast does the output respond after an input transition?"
+- "Does the sampled waveform look clean across repeated reads?"
 
-Provides:
-- Pin stability scoring (0.0 = completely unstable, 1.0 = perfectly stable)
-- Propagation delay measurement in microseconds
-- Signal quality assessment for each output pin
+It translates those low-level samples into stability scores and propagation
+delay summaries that the dashboard/report layers can use.
 """
 
 import time
@@ -145,7 +144,8 @@ class SignalAnalyzer:
         )
 
         if self.check_firmware_support():
-            # Use RAPID_SAMPLE firmware command for maximum speed
+            # Use the firmware-side rapid sampler because Python/USB timing is
+            # too slow and jittery for this kind of stability measurement.
             cmd = f"RAPID_SAMPLE,{arduino_pin},{num_samples}"
             response = self.arduino.send_and_receive(cmd, timeout=2.0)
 

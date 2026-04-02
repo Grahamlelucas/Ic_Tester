@@ -4,12 +4,10 @@
 # Dependencies: tkinter
 
 """
-Custom GUI widgets for IC Tester application.
+Reusable GUI widgets for the IC Tester application.
 
-This module provides:
-- StatusIndicator: Large visual pass/fail/testing indicator
-- ModernButton: Styled button with hover effects
-- HelpDialog: Documentation and help dialog
+These classes keep common visual behavior in one place so the rest of the GUI
+code can focus on workflow rather than redrawing the same controls repeatedly.
 """
 
 import tkinter as tk
@@ -56,7 +54,7 @@ class StatusIndicator(tk.Canvas):
         self.delete("all")
         
         padding = 10
-        # Draw dashed circle outline
+        # Draw the neutral outline first, then place the state glyph over it.
         self.create_oval(padding, padding, self.size - padding, self.size - padding,
                         outline=Theme.TEXT_MUTED, width=3, dash=(5, 3))
         # Draw question mark
@@ -154,7 +152,8 @@ class ModernButton(tk.Canvas):
             text_color: Text color (default: white)
             **kwargs: Additional Canvas arguments
         """
-        # Inherit canvas background from parent to avoid color mismatches
+        # Inherit the surrounding background so the canvas-backed button blends
+        # into cards/panels without a visible square canvas edge.
         parent_bg = parent.cget('bg') if hasattr(parent, 'cget') else Theme.BG_CARD
         super().__init__(parent, width=width, height=height, 
                         bg=parent_bg, highlightthickness=0, **kwargs)

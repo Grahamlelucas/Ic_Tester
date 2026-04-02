@@ -4,25 +4,12 @@
 # Dependencies: pdfplumber (optional), re, json
 
 """
-TTL Datasheet Parser module.
+Datasheet-to-definition extraction helper.
 
-Extracts chip information from Texas Instruments TTL Data Book and similar PDFs.
-
-Capabilities:
-- Extract chip part numbers (SN74xx, 74xx patterns)
-- Parse text-based truth tables
-- Extract function descriptions
-- Identify pin counts from specifications
-
-Limitations:
-- Cannot extract pin diagrams (images)
-- Complex timing diagrams need manual review
-- Some specifications may be in image format
-
-Usage:
-    parser = DatasheetParser("ttl_data_book.pdf")
-    chips = parser.extract_all_chips()
-    parser.export_to_json("chips/")
+This module tries to bootstrap chip definitions from PDF datasheets or TTL data
+books by mining the text layer for part numbers, descriptions, truth tables,
+and package information. The output is intentionally partial: it is meant to
+save manual effort, not replace human review.
 """
 
 import re
@@ -35,7 +22,8 @@ from ..logger import get_logger
 
 logger = get_logger("intelligence.datasheet_parser")
 
-# Try to import PDF libraries
+# PDF support is optional so the rest of the application can run without the
+# parsing stack installed.
 PDF_AVAILABLE = False
 try:
     import pdfplumber

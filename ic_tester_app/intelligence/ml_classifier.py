@@ -5,11 +5,20 @@
 # Related: intelligence/pattern_analyzer.py, diagnostics/diagnostic_report.py
 
 """
-ML Fault Classifier module.
+Lightweight host-side fault classifier.
 
-Lightweight ML classifier that runs entirely on the host PC (not the Arduino).
-Uses a k-nearest-neighbors approach with feature extraction from test results
-to classify hardware faults into categories:
+This module adds a small amount of learned pattern recognition on top of the
+rule-based diagnostics. It extracts numerical features from per-pin diagnostic
+data, compares them to labeled examples with a simple KNN approach, and returns
+the most likely fault category.
+
+It is intentionally simple:
+- pure Python,
+- no external ML framework,
+- transparent feature vectors,
+- easy to seed with synthetic examples and improve with real history.
+
+Fault categories include:
 
 - open_pin: Pin not physically connected
 - shorted_pin: Pin shorted to VCC or GND
@@ -35,7 +44,8 @@ from ..logger import get_logger
 logger = get_logger("intelligence.ml_classifier")
 
 
-# Fault categories with human-readable descriptions
+# Fault labels are stored separately from their UI descriptions so training data
+# can stay compact while the dashboard/output log remains readable.
 FAULT_CATEGORIES = {
     "open_pin": "Pin not physically connected — no electrical path",
     "shorted_high": "Pin shorted to VCC — always reads HIGH",
@@ -131,6 +141,8 @@ class MLFaultClassifier:
         self.data_file = self.data_dir / "ml_training_data.json"
         self.training_data: List[TrainingSample] = []
 
+        # Load persisted samples first; if none exist, fall back to a synthetic
+        # seed set so classification still works on a fresh install.
         self._load_training_data()
         if not self.training_data:
             self._seed_training_data()
@@ -165,7 +177,8 @@ class MLFaultClassifier:
                 fault_description="Insufficient training data",
             )
 
-        # Count votes from nearest neighbors, weighted by inverse distance
+        # Weight nearer samples more heavily so a very similar example can beat
+        # a larger number of weaker matches.
         votes: Dict[str, float] = {}
         for dist, sample in neighbors:
             weight = 1.0 / (dist + 1e-6)

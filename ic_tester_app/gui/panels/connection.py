@@ -4,8 +4,11 @@
 # Dependencies: tkinter, ttk
 
 """
-Connection Panel module.
-Provides Arduino port scanning, selection, and connection management.
+Arduino connection control panel.
+
+This panel owns the visible connect/disconnect workflow in the sidebar. It does
+not talk to serial hardware directly; instead it exposes UI state and delegates
+actions to callbacks supplied by the main application coordinator.
 """
 
 import tkinter as tk
@@ -58,7 +61,9 @@ class ConnectionPanel:
     
     def _create_panel(self):
         """Build the panel UI with improved spacing"""
-        # Card container with more padding
+        # Card container with the panel's full layout. Each row reflects one
+        # stage of the connection workflow: scan, choose port, inspect status,
+        # then connect/disconnect.
         self.frame = tk.Frame(self.parent, bg=Theme.BG_CARD, padx=18, pady=18)
         self.frame.pack(fill=tk.X, pady=(0, 12))
         
@@ -111,7 +116,8 @@ class ConnectionPanel:
                                    bg=Theme.BG_CARD, fg=Theme.DISCONNECTED)
         self.conn_status.pack(side=tk.LEFT)
         
-        # Board info row (hidden until connected)
+        # Board details stay hidden until a successful handshake tells us what
+        # hardware is actually attached.
         self.board_info_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
         
         tk.Label(self.board_info_row, text="Board:", font=self.fonts['body'],
@@ -149,6 +155,8 @@ class ConnectionPanel:
         Args:
             ports: List of port names to display
         """
+        # Replace the dropdown contents after a scan. If ports exist, preselect
+        # the first one so the common classroom case is one click shorter.
         self.port_combo['values'] = ports
         if ports:
             self.port_combo.current(0)
@@ -173,7 +181,7 @@ class ConnectionPanel:
         pin_text = f"({d_count} digital, {a_count} analog pins)"
         self.pin_info_label.config(text=pin_text)
         
-        # Show board info row
+        # Reveal the board row only after we have meaningful information to show.
         self.board_info_row.pack(fill=tk.X, pady=(0, 12), before=self.frame.winfo_children()[-1])
         
         # Notify parent to rebind mousewheel events for new widgets

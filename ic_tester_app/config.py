@@ -52,11 +52,11 @@ class Config:
     # Valid pins for IC testing (excludes serial 0-1, SPI 50-53, A0)
     VALID_TEST_PINS = list(range(2, 4)) + list(range(10, 50)) + list(range(55, 70))
     
-    # GUI Settings - larger, more spacious window
-    WINDOW_MIN_WIDTH = 1200
-    WINDOW_MIN_HEIGHT = 750
-    WINDOW_START_WIDTH = 1400
-    WINDOW_START_HEIGHT = 900
+    # GUI Settings - sidebar + tabs layout
+    WINDOW_MIN_WIDTH = 900
+    WINDOW_MIN_HEIGHT = 650
+    WINDOW_START_WIDTH = 1100
+    WINDOW_START_HEIGHT = 800
     
     # Logging
     LOG_LEVEL = "INFO"

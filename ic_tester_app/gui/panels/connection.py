@@ -62,7 +62,7 @@ class ConnectionPanel:
         self.frame = tk.Frame(self.parent, bg=Theme.BG_CARD, padx=18, pady=18)
         self.frame.pack(fill=tk.X, pady=(0, 12))
         
-        # Title row with scan button on right
+        # Title row
         title_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
         title_row.pack(fill=tk.X, pady=(0, 12))
         
@@ -70,9 +70,12 @@ class ConnectionPanel:
                 font=self.fonts['subheading'],
                 bg=Theme.BG_CARD, fg=Theme.TEXT_PRIMARY).pack(side=tk.LEFT)
         
-        # Scan button in header for visibility
-        ModernButton(title_row, "🔍 Scan", self.on_scan,
-                    width=75, height=30, bg_color=Theme.ACCENT_INFO).pack(side=tk.RIGHT)
+        # Scan button row
+        scan_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
+        scan_row.pack(fill=tk.X, pady=(0, 12))
+        
+        ModernButton(scan_row, "🔍 Scan Ports", self.on_scan,
+                    width=120, height=32, bg_color=Theme.ACCENT_INFO).pack(fill=tk.X)
         
         # Port selection row
         port_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
@@ -82,7 +85,7 @@ class ConnectionPanel:
                 bg=Theme.BG_CARD, fg=Theme.TEXT_SECONDARY, width=6, 
                 anchor=tk.W).pack(side=tk.LEFT)
         
-        # Port dropdown - wider
+        # Port dropdown
         self.port_var = tk.StringVar()
         self.port_combo = ttk.Combobox(port_row, textvariable=self.port_var,
                                        state='readonly', width=22)
@@ -90,7 +93,7 @@ class ConnectionPanel:
         
         # Status row
         status_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
-        status_row.pack(fill=tk.X, pady=(0, 15))
+        status_row.pack(fill=tk.X, pady=(0, 12))
         
         tk.Label(status_row, text="Status:", font=self.fonts['body'],
                 bg=Theme.BG_CARD, fg=Theme.TEXT_SECONDARY, width=6,
@@ -107,6 +110,23 @@ class ConnectionPanel:
                                    font=self.fonts['body'],
                                    bg=Theme.BG_CARD, fg=Theme.DISCONNECTED)
         self.conn_status.pack(side=tk.LEFT)
+        
+        # Board info row (hidden until connected)
+        self.board_info_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
+        
+        tk.Label(self.board_info_row, text="Board:", font=self.fonts['body'],
+                bg=Theme.BG_CARD, fg=Theme.TEXT_SECONDARY, width=6,
+                anchor=tk.W).pack(side=tk.LEFT)
+        
+        self.board_label = tk.Label(self.board_info_row, text="", 
+                                   font=self.fonts['body_bold'],
+                                   bg=Theme.BG_CARD, fg=Theme.ACCENT_PRIMARY)
+        self.board_label.pack(side=tk.LEFT)
+        
+        self.pin_info_label = tk.Label(self.board_info_row, text="", 
+                                      font=self.fonts['small'],
+                                      bg=Theme.BG_CARD, fg=Theme.TEXT_SECONDARY)
+        self.pin_info_label.pack(side=tk.LEFT, padx=(8, 0))
         
         # Button row - full width buttons
         btn_row = tk.Frame(self.frame, bg=Theme.BG_CARD)
@@ -137,6 +157,30 @@ class ConnectionPanel:
         """Get the currently selected port name"""
         return self.port_var.get()
     
+    def set_board_info(self, board_type: str, digital_range: tuple, analog_range: tuple):
+        """Update board information display.
+        
+        Args:
+            board_type: Board type string (e.g., 'MEGA2560', 'UNO_R3')
+            digital_range: Tuple of (min, max) digital pins
+            analog_range: Tuple of (min, max) analog pins
+        """
+        board_display = board_type.replace("_", " ")
+        self.board_label.config(text=board_display)
+        
+        d_count = digital_range[1] - digital_range[0] + 1
+        a_count = analog_range[1] - analog_range[0] + 1
+        pin_text = f"({d_count} digital, {a_count} analog pins)"
+        self.pin_info_label.config(text=pin_text)
+        
+        # Show board info row
+        self.board_info_row.pack(fill=tk.X, pady=(0, 12), before=self.frame.winfo_children()[-1])
+        
+        # Notify parent to rebind mousewheel events for new widgets
+        self.frame.event_generate("<<WidgetsChanged>>")
+        
+        logger.info(f"Board info displayed: {board_type}")
+    
     def set_connected(self):
         """Update UI to show connected state"""
         self.status_dot.delete("all")
@@ -157,6 +201,9 @@ class ConnectionPanel:
         self.status_dot.delete("all")
         self.status_dot.create_oval(2, 2, 10, 10, fill=Theme.DISCONNECTED, outline="")
         self.conn_status.config(text="Disconnected", fg=Theme.DISCONNECTED)
+        
+        # Hide board info
+        self.board_info_row.pack_forget()
         
         # Swap buttons
         self.disconnect_btn.pack_forget()

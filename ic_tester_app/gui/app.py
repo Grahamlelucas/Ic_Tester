@@ -1,7 +1,8 @@
 # ic_tester_app/gui/app.py
-# Last edited: 2026-01-19
+# Last edited: 2026-03-19
 # Purpose: Main GUI application class that integrates all panels and coordinates testing
 # Dependencies: tkinter, threading
+# Related: diagnostics/, intelligence/ml_classifier.py, performance/benchmark.py
 
 """
 Main GUI Application module.
@@ -16,7 +17,8 @@ from typing import Dict
 
 from .theme import Theme, get_fonts
 from .widgets import ModernButton, HelpDialog
-from .panels import ConnectionPanel, ChipPanel, PinMappingPanel, StatusPanel, OutputPanel
+from .panels import (ConnectionPanel, ChipPanel, PinMappingPanel, StatusPanel, OutputPanel,
+                     PinVisualizer, DashboardPanel)
 
 from ..arduino import ArduinoConnection
 from ..chips import (
@@ -27,6 +29,13 @@ from ..chips.migration import PinMigrationHelper
 from ..config import Config
 from ..logger import get_logger, setup_logging
 from ..intelligence import ChipKnowledge, SessionTracker, PatternAnalyzer, ChipEducator
+from ..intelligence.ml_classifier import MLFaultClassifier
+from ..diagnostics import (
+    StatisticalTester, SignalAnalyzer, DiagnosticReportGenerator, ICFingerprinter,
+    AnalogAnalyzer,
+)
+from ..chips.test_generator import TestGenerator
+from ..performance import PerformanceBenchmark
 
 logger = get_logger("gui.app")
 
@@ -81,6 +90,16 @@ class ICTesterApp:
         self.educator = ChipEducator(self.knowledge, self.session_tracker)
         self.migration_helper = PinMigrationHelper(self.chip_db)
         
+        # Initialize advanced diagnostics (Phases 1-7)
+        self.statistical_tester = StatisticalTester(self.tester)
+        self.signal_analyzer = SignalAnalyzer(self.arduino)
+        self.report_generator = DiagnosticReportGenerator()
+        self.ml_classifier: Optional[MLFaultClassifier] = None
+        self.fingerprinter = ICFingerprinter(self.arduino, self.chip_db)
+        self.test_generator = TestGenerator()
+        self.benchmark = PerformanceBenchmark(self.arduino)
+        self.analog_analyzer = AnalogAnalyzer(self.arduino)
+        
         # State tracking
         self.is_testing = False
         self._previous_chip_id = None
@@ -103,47 +122,108 @@ class ICTesterApp:
         self._start_event_poller()
         
         logger.info("Application initialized successfully")
+
+    def _get_ml_classifier(self) -> Optional[MLFaultClassifier]:
+        """Create the ML classifier lazily so startup does not depend on session data."""
+        if self.ml_classifier is None:
+            try:
+                self.ml_classifier = MLFaultClassifier()
+            except Exception as e:
+                logger.warning(f"ML classifier unavailable: {e}")
+                return None
+        return self.ml_classifier
     
     def _create_ui(self):
-        """Build the main UI layout using grid for better control"""
-        # Configure root grid weights for responsive layout
+        """Build the main UI layout: scrollable sidebar + tabbed main area"""
+        # Configure root grid
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         
-        # Main container with padding
+        # Main container
         main = tk.Frame(self.root, bg=Theme.BG_DARK)
-        main.grid(row=0, column=0, sticky="nsew", padx=25, pady=20)
-        
-        # Configure main grid: header row + content row
+        main.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         main.grid_rowconfigure(1, weight=1)
-        main.grid_columnconfigure(0, weight=1)
+        main.grid_columnconfigure(0, weight=0)  # sidebar fixed
+        main.grid_columnconfigure(1, weight=1)  # main expands
         
-        # Header
+        # ── Header (spans both columns) ──
         self._create_header(main)
         
-        # Content area using grid (3 columns: left, center, right)
-        content = tk.Frame(main, bg=Theme.BG_DARK)
-        content.grid(row=1, column=0, sticky="nsew", pady=(20, 0))
+        # ── Left sidebar (scrollable) ──
+        self._create_sidebar(main)
         
-        # Configure content columns with proper weights
-        content.grid_rowconfigure(0, weight=1)
-        content.grid_columnconfigure(0, weight=0, minsize=300)   # Left: fixed width
-        content.grid_columnconfigure(1, weight=0, minsize=320)   # Center: fixed width
-        content.grid_columnconfigure(2, weight=1, minsize=400)   # Right: expands
+        # ── Main area (tabbed notebook) ──
+        self._create_main_tabs(main)
         
-        # Left column - Connection, Chip Selection, Status
-        left_col = tk.Frame(content, bg=Theme.BG_DARK)
-        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 15))
+        # ── Style the Notebook tabs ──
+        self._style_notebook()
         
+        # Trigger initial chip selection
+        if self.chip_db.get_chip_count() > 0:
+            chip_id = self.chip_panel.get_selected_chip()
+            if chip_id:
+                self._on_chip_selected(chip_id)
+    
+    def _create_sidebar(self, parent):
+        """Build the scrollable left sidebar with connection, chip, status, and tools"""
+        import platform
+        
+        sidebar_outer = tk.Frame(parent, bg=Theme.BG_DARK, width=290)
+        sidebar_outer.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(10, 0))
+        sidebar_outer.grid_propagate(False)
+        
+        # Canvas + scrollbar for sidebar scrolling
+        self._sidebar_canvas = tk.Canvas(sidebar_outer, bg=Theme.BG_DARK,
+                                         highlightthickness=0, width=280)
+        sidebar_scrollbar = tk.Scrollbar(sidebar_outer, orient=tk.VERTICAL,
+                                          command=self._sidebar_canvas.yview)
+        self._sidebar_inner = tk.Frame(self._sidebar_canvas, bg=Theme.BG_DARK)
+        
+        self._sidebar_inner.bind("<Configure>",
+            lambda e: self._sidebar_canvas.configure(
+                scrollregion=self._sidebar_canvas.bbox("all")))
+        
+        self._sidebar_canvas_win = self._sidebar_canvas.create_window(
+            (0, 0), window=self._sidebar_inner, anchor=tk.NW)
+        self._sidebar_canvas.configure(yscrollcommand=sidebar_scrollbar.set)
+        self._sidebar_canvas.bind("<Configure>",
+            lambda e: self._sidebar_canvas.itemconfig(
+                self._sidebar_canvas_win, width=e.width))
+        
+        self._sidebar_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sidebar_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Sidebar mousewheel scrolling
+        def _on_sidebar_scroll(event):
+            if platform.system() == "Darwin":
+                self._sidebar_canvas.yview_scroll(int(-1 * event.delta), "units")
+            else:
+                self._sidebar_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+        # Store the scroll handler for later use
+        self._sidebar_scroll_handler = _on_sidebar_scroll
+        
+        # Bind to canvas and inner frame
+        self._sidebar_canvas.bind("<MouseWheel>", _on_sidebar_scroll)
+        self._sidebar_inner.bind("<MouseWheel>", _on_sidebar_scroll)
+        
+        # Also bind to Button-4 and Button-5 for Linux
+        if platform.system() == "Linux":
+            self._sidebar_canvas.bind("<Button-4>", lambda e: self._sidebar_canvas.yview_scroll(-1, "units"))
+            self._sidebar_canvas.bind("<Button-5>", lambda e: self._sidebar_canvas.yview_scroll(1, "units"))
+            self._sidebar_inner.bind("<Button-4>", lambda e: self._sidebar_canvas.yview_scroll(-1, "units"))
+            self._sidebar_inner.bind("<Button-5>", lambda e: self._sidebar_canvas.yview_scroll(1, "units"))
+        
+        # ── Panels inside sidebar ──
         self.connection_panel = ConnectionPanel(
-            left_col,
+            self._sidebar_inner,
             on_connect=self._connect_arduino,
             on_disconnect=self._disconnect_arduino,
             on_scan=self._scan_ports
         )
         
         self.chip_panel = ChipPanel(
-            left_col,
+            self._sidebar_inner,
             chip_ids=self.chip_db.get_all_chip_ids(),
             on_chip_selected=self._on_chip_selected,
             on_run_test=self._run_test,
@@ -152,36 +232,165 @@ class ICTesterApp:
             board=self.chip_db.get_board()
         )
         
-        self.status_panel = StatusPanel(left_col)
+        self.status_panel = StatusPanel(self._sidebar_inner)
         
-        # Center column - Pin Mapping (expandable)
-        center_col = tk.Frame(content, bg=Theme.BG_DARK)
-        center_col.grid(row=0, column=1, sticky="nsew", padx=(0, 15))
+        # Advanced diagnostics button group
+        adv_frame = tk.Frame(self._sidebar_inner, bg=Theme.BG_CARD, padx=10, pady=8)
+        adv_frame.pack(fill=tk.X, pady=(10, 0))
+        tk.Label(adv_frame, text="Advanced Diagnostics", font=self.fonts['subheading'],
+                 bg=Theme.BG_CARD, fg=Theme.TEXT_PRIMARY).pack(anchor=tk.W, pady=(0, 5))
+        
+        btn_row1 = tk.Frame(adv_frame, bg=Theme.BG_CARD)
+        btn_row1.pack(fill=tk.X)
+        ModernButton(btn_row1, "Statistical", self._run_statistical_test,
+                     width=125, height=28, bg_color=Theme.ACCENT_INFO).pack(side=tk.LEFT, padx=(0, 5))
+        ModernButton(btn_row1, "Signals", self._run_signal_analysis,
+                     width=125, height=28, bg_color=Theme.ACCENT_INFO).pack(side=tk.LEFT)
+        
+        btn_row2 = tk.Frame(adv_frame, bg=Theme.BG_CARD)
+        btn_row2.pack(fill=tk.X, pady=(5, 0))
+        ModernButton(btn_row2, "Fingerprint", self._run_fingerprint,
+                     width=125, height=28, bg_color=Theme.ACCENT_INFO).pack(side=tk.LEFT, padx=(0, 5))
+        ModernButton(btn_row2, "Benchmark", self._run_benchmark,
+                     width=125, height=28, bg_color=Theme.ACCENT_INFO).pack(side=tk.LEFT)
+        
+        btn_row3 = tk.Frame(adv_frame, bg=Theme.BG_CARD)
+        btn_row3.pack(fill=tk.X, pady=(5, 0))
+        ModernButton(btn_row3, "Analog Voltage", self._run_analog_analysis,
+                     width=255, height=28, bg_color="#6b46c1").pack(side=tk.LEFT)
+        
+        # Recursively bind mousewheel on ALL sidebar children so scroll works everywhere
+        self._bind_children_mousewheel(self._sidebar_inner, _on_sidebar_scroll)
+        
+        # Also use Enter/Leave events to ensure scrolling works when mouse enters any widget
+        def _on_enter(event):
+            self._sidebar_canvas.bind_all("<MouseWheel>", _on_sidebar_scroll)
+            if platform.system() == "Linux":
+                self._sidebar_canvas.bind_all("<Button-4>", lambda e: self._sidebar_canvas.yview_scroll(-1, "units"))
+                self._sidebar_canvas.bind_all("<Button-5>", lambda e: self._sidebar_canvas.yview_scroll(1, "units"))
+        
+        def _on_leave(event):
+            self._sidebar_canvas.unbind_all("<MouseWheel>")
+            if platform.system() == "Linux":
+                self._sidebar_canvas.unbind_all("<Button-4>")
+                self._sidebar_canvas.unbind_all("<Button-5>")
+        
+        sidebar_outer.bind("<Enter>", _on_enter)
+        sidebar_outer.bind("<Leave>", _on_leave)
+        
+        # Listen for widget changes (e.g., board info being added dynamically)
+        def _on_widgets_changed(event):
+            self._bind_children_mousewheel(self._sidebar_inner, _on_sidebar_scroll)
+            # Update scroll region
+            self._sidebar_canvas.configure(scrollregion=self._sidebar_canvas.bbox("all"))
+        
+        self._sidebar_inner.bind("<<WidgetsChanged>>", _on_widgets_changed)
+    
+    def _create_main_tabs(self, parent):
+        """Build the tabbed main content area"""
+        # Notebook container
+        nb_frame = tk.Frame(parent, bg=Theme.BG_DARK)
+        nb_frame.grid(row=1, column=1, sticky="nsew", pady=(10, 0))
+        
+        self.notebook = ttk.Notebook(nb_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # ── Tab 1: Pin Mapping ──
+        tab_pins = tk.Frame(self.notebook, bg=Theme.BG_DARK)
+        self.notebook.add(tab_pins, text="  Pin Mapping  ")
+        
+        # Split pin mapping tab into left (mapping) and right (chip view)
+        tab_pins.grid_rowconfigure(0, weight=1)
+        tab_pins.grid_columnconfigure(0, weight=1)
+        tab_pins.grid_columnconfigure(1, weight=0)
+        
+        pin_map_container = tk.Frame(tab_pins, bg=Theme.BG_DARK)
+        pin_map_container.grid(row=0, column=0, sticky="nsew", padx=(5, 5))
         
         self.pin_mapping_panel = PinMappingPanel(
-            center_col,
+            pin_map_container,
             log_callback=self._log
         )
         
-        # Right column - Output Log (main content, expands)
-        right_col = tk.Frame(content, bg=Theme.BG_DARK)
-        right_col.grid(row=0, column=2, sticky="nsew")
+        chip_view_container = tk.Frame(tab_pins, bg=Theme.BG_DARK, width=280)
+        chip_view_container.grid(row=0, column=1, sticky="nsew", padx=(0, 5))
+        chip_view_container.grid_propagate(False)
+        
+        self.pin_visualizer = PinVisualizer(chip_view_container)
+        self.pin_visualizer.pack(fill=tk.BOTH, expand=True)
+        
+        # ── Tab 2: Output Log ──
+        tab_output = tk.Frame(self.notebook, bg=Theme.BG_DARK)
+        self.notebook.add(tab_output, text="  Output Log  ")
         
         self.output_panel = OutputPanel(
-            right_col,
+            tab_output,
             on_clear=self._clear_output
         )
         
-        # Trigger initial chip selection
-        if self.chip_db.get_chip_count() > 0:
-            chip_id = self.chip_panel.get_selected_chip()
-            if chip_id:
-                self._on_chip_selected(chip_id)
+        # ── Tab 3: Dashboard ──
+        tab_dash = tk.Frame(self.notebook, bg=Theme.BG_DARK)
+        self.notebook.add(tab_dash, text="  Dashboard  ")
+        
+        self.dashboard_panel = DashboardPanel(tab_dash)
+        self.dashboard_panel.pack(fill=tk.BOTH, expand=True)
+        
+        # Start on the Output Log tab (most commonly used)
+        self.notebook.select(tab_output)
+    
+    def _style_notebook(self):
+        """Apply dark theme styling to ttk.Notebook tabs and comboboxes"""
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Notebook styling
+        style.configure("TNotebook", background=Theme.BG_DARK, borderwidth=0,
+                        tabmargins=[2, 5, 2, 0])
+        style.configure("TNotebook.Tab",
+            background=Theme.BG_CARD,
+            foreground=Theme.TEXT_SECONDARY,
+            padding=[14, 6],
+            font=self.fonts['button'],
+            borderwidth=0,
+        )
+        style.map("TNotebook.Tab",
+            background=[("selected", Theme.BG_LIGHT), ("active", "#2a2a4a")],
+            foreground=[("selected", Theme.TEXT_PRIMARY), ("active", Theme.TEXT_PRIMARY)],
+        )
+        # Remove dotted focus ring on tabs
+        style.layout("TNotebook.Tab", [
+            ('Notebook.tab', {'sticky': 'nswe', 'children': [
+                ('Notebook.padding', {'side': 'top', 'sticky': 'nswe', 'children': [
+                    ('Notebook.label', {'side': 'top', 'sticky': ''})
+                ]})
+            ]})
+        ])
+        
+        # Combobox styling to match dark theme
+        style.configure("TCombobox",
+            fieldbackground=Theme.BG_LIGHT,
+            background=Theme.BG_CARD,
+            foreground=Theme.TEXT_PRIMARY,
+            arrowcolor=Theme.TEXT_SECONDARY,
+            borderwidth=0,
+        )
+        style.map("TCombobox",
+            fieldbackground=[("readonly", Theme.BG_LIGHT), ("disabled", Theme.BG_CARD)],
+            foreground=[("readonly", Theme.TEXT_PRIMARY), ("disabled", Theme.TEXT_MUTED)],
+        )
+        
+        # Scrollbar styling
+        style.configure("TScrollbar",
+            background=Theme.BG_CARD,
+            troughcolor=Theme.BG_DARK,
+            arrowcolor=Theme.TEXT_SECONDARY,
+            borderwidth=0,
+        )
     
     def _create_header(self, parent):
         """Create the application header"""
         header = tk.Frame(parent, bg=Theme.BG_DARK)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5))
         
         # Title
         tk.Label(header, text=Config.APP_NAME, 
@@ -224,6 +433,30 @@ class ICTesterApp:
         else:
             logger.info(message)
     
+    def _switch_to_tab(self, index: int):
+        """Switch the main notebook to the specified tab index (0=Pin Mapping, 1=Output, 2=Dashboard)"""
+        try:
+            self.notebook.select(index)
+        except Exception:
+            pass
+    
+    @staticmethod
+    def _bind_children_mousewheel(widget, handler):
+        """Recursively bind mousewheel handler to widget and all its descendants"""
+        import platform
+        
+        # Bind mousewheel for Windows/macOS
+        widget.bind("<MouseWheel>", handler, add="+")
+        
+        # Bind for Linux
+        if platform.system() == "Linux":
+            widget.bind("<Button-4>", lambda e: handler(type('Event', (), {'delta': 120})()), add="+")
+            widget.bind("<Button-5>", lambda e: handler(type('Event', (), {'delta': -120})()), add="+")
+        
+        # Recursively bind to all children
+        for child in widget.winfo_children():
+            ICTesterApp._bind_children_mousewheel(child, handler)
+    
     # =========================================================================
     # Connection Management
     # =========================================================================
@@ -262,7 +495,19 @@ class ICTesterApp:
         
         if self.arduino.connect(port):
             self.connection_panel.set_connected()
-            self._log("✅ Arduino connected successfully!", "success")
+            
+            # Detect and display board information
+            if hasattr(self.arduino, 'commands') and self.arduino.commands:
+                board_type = self.arduino.commands.get_board_type()
+                pin_ranges = self.arduino.commands.get_pin_ranges()
+                self.connection_panel.set_board_info(
+                    board_type,
+                    pin_ranges['digital'],
+                    pin_ranges['analog']
+                )
+                self._log(f"✅ Arduino connected successfully! Board: {board_type}", "success")
+            else:
+                self._log("✅ Arduino connected successfully!", "success")
         else:
             self.connection_panel.set_failed()
             self._log("❌ Failed to connect to Arduino", "error")
@@ -374,6 +619,10 @@ class ICTesterApp:
         self.pin_mapping_panel.populate(chip)
         self.pin_mapping_panel.set_chip_id(chip_id)
         
+        # Update chip visualizer and reset dashboard
+        self.pin_visualizer.load_chip(chip)
+        self.dashboard_panel.clear()
+        
         # Auto-load saved pin mapping if it exists (silent - no warning if missing)
         self.pin_mapping_panel.load(silent=True)
         
@@ -448,6 +697,9 @@ class ICTesterApp:
         self.test_start_time = __import__('time').time()
         self.status_panel.set_testing()
         self.chip_panel.set_testing(True)
+        
+        # Switch to Output Log tab so user sees results
+        self._switch_to_tab(1)
                 
         self.output_panel.log_test_start(chip_id)
         
@@ -529,6 +781,40 @@ class ICTesterApp:
         
         # Show per-pin diagnostic summary
         self._show_pin_diagnostics(results)
+        
+        # === Advanced Diagnostics Integration ===
+        # Update pin visualizer from test results
+        self.pin_visualizer.update_from_test_result(results)
+        
+        # Generate diagnostic report
+        mistakes = self.pattern_analyzer.analyze_failure(
+            chip_id, results,
+            getattr(self, '_current_test_mapping', {})
+        ) if not results.get('success') else []
+        
+        diag_report = self.report_generator.generate_report(
+            test_result=results,
+            pattern_mistakes=mistakes,
+            confidence_score=confidence,
+        )
+        
+        # Update dashboard with diagnostic report
+        self.dashboard_panel.update_from_diagnostic_report(diag_report)
+        
+        # Run ML fault classification and display on dashboard
+        ml_classifier = self._get_ml_classifier()
+        if ml_classifier is not None:
+            ml_predictions = ml_classifier.classify_test_result(results)
+            self.dashboard_panel.update_ml_predictions(ml_predictions)
+
+            # Auto-train ML classifier from this result
+            ml_classifier.auto_label_and_train(results)
+        
+        # Save diagnostic report for historical analysis
+        try:
+            self.report_generator.save_report(diag_report)
+        except Exception as e:
+            logger.debug(f"Failed to save diagnostic report: {e}")
 
         if not results.get('success'):
             # Try to identify correct chip
@@ -715,6 +1001,293 @@ class ICTesterApp:
             self._log("⏹ Aborting test...", "warning")
     
     # =========================================================================
+    # Advanced Diagnostics (Phases 1-7)
+    # =========================================================================
+    
+    def _run_statistical_test(self):
+        """Run multi-run statistical test for intermittent failure detection"""
+        if not self.arduino.connected:
+            self._log("❌ Connect to Arduino first!", "error")
+            return
+        if self.is_testing:
+            self._log("⚠️ Test already in progress.", "warning")
+            return
+        
+        chip_id = self.chip_panel.get_selected_chip()
+        if not chip_id:
+            messagebox.showerror("No Chip Selected", "Please select a chip.")
+            return
+        if not self.pin_mapping_panel.validate():
+            messagebox.showerror("Invalid Pin Mapping", "Please configure valid pin mappings.")
+            return
+        
+        user_mapping = self.pin_mapping_panel.get_mapping()
+        if not user_mapping:
+            self._log("❌ No valid pin mapping!", "error")
+            return
+        
+        self.is_testing = True
+        self.status_panel.set_testing()
+        self.chip_panel.set_testing(True)
+        
+        def stat_thread():
+            try:
+                result = self.statistical_tester.run_statistical_test(
+                    chip_id, num_runs=5,
+                    progress_callback=self._log,
+                    custom_mapping=user_mapping,
+                    board=self.chip_panel.get_board(),
+                )
+                self.root.after(0, lambda: self._on_statistical_complete(result))
+            except Exception as e:
+                self.root.after(0, lambda: self._handle_test_error(str(e)))
+        
+        threading.Thread(target=stat_thread, daemon=True).start()
+    
+    def _on_statistical_complete(self, stat_result):
+        """Handle completion of statistical testing"""
+        self.is_testing = False
+        self.chip_panel.set_testing(False)
+        
+        if stat_result.overall_pass_rate >= 0.9:
+            self.status_panel.set_passed()
+        elif stat_result.overall_pass_rate >= 0.5:
+            self.status_panel.set_idle()
+        else:
+            self.status_panel.set_failed()
+        
+        # Generate diagnostic report incorporating statistical data
+        if stat_result.run_results:
+            last_result = stat_result.run_results[-1]
+            diag_report = self.report_generator.generate_report(
+                test_result=last_result,
+                statistical_result=stat_result,
+            )
+            self.dashboard_panel.update_from_diagnostic_report(diag_report)
+            self.pin_visualizer.update_from_diagnostic_report(diag_report)
+    
+    def _run_signal_analysis(self):
+        """Run signal stability and propagation delay analysis"""
+        if not self.arduino.connected:
+            self._log("❌ Connect to Arduino first!", "error")
+            return
+        if self.is_testing:
+            self._log("⚠️ Test already in progress.", "warning")
+            return
+        
+        chip_id = self.chip_panel.get_selected_chip()
+        if not chip_id:
+            messagebox.showerror("No Chip Selected", "Please select a chip.")
+            return
+        
+        chip_data = self.chip_db.get_chip(chip_id, board=self.chip_panel.get_board())
+        if not chip_data:
+            self._log(f"❌ Chip {chip_id} data not found!", "error")
+            return
+        
+        self.is_testing = True
+        self.status_panel.set_testing()
+        
+        def signal_thread():
+            try:
+                report = self.signal_analyzer.analyze_chip_signals(
+                    chip_data, progress_callback=self._log,
+                )
+                self.root.after(0, lambda: self._on_signal_complete(report))
+            except Exception as e:
+                self.root.after(0, lambda: self._handle_test_error(str(e)))
+        
+        threading.Thread(target=signal_thread, daemon=True).start()
+    
+    def _on_signal_complete(self, signal_report):
+        """Handle completion of signal analysis"""
+        self.is_testing = False
+        self.status_panel.set_idle()
+        
+        if signal_report.overall_stability >= 0.95:
+            self._log("✅ All signals stable", "success")
+        elif signal_report.flickering_pins:
+            self._log(f"⚠️ {len(signal_report.flickering_pins)} flickering pin(s) detected", "warning")
+    
+    def _run_fingerprint(self):
+        """Run IC behavior fingerprinting to identify unknown chips"""
+        if not self.arduino.connected:
+            self._log("❌ Connect to Arduino first!", "error")
+            return
+        if self.is_testing:
+            self._log("⚠️ Test already in progress.", "warning")
+            return
+        
+        chip_id = self.chip_panel.get_selected_chip()
+        if not chip_id:
+            messagebox.showerror("No Chip Selected", "Please select a chip for reference pinout.")
+            return
+        
+        chip_data = self.chip_db.get_chip(chip_id, board=self.chip_panel.get_board())
+        if not chip_data:
+            self._log(f"❌ Chip {chip_id} data not found!", "error")
+            return
+        
+        self.is_testing = True
+        self.status_panel.set_testing()
+        
+        def fp_thread():
+            try:
+                fingerprint = self.fingerprinter.fingerprint_chip(
+                    chip_data, progress_callback=self._log,
+                )
+                self.root.after(0, lambda: self._on_fingerprint_complete(fingerprint))
+            except Exception as e:
+                self.root.after(0, lambda: self._handle_test_error(str(e)))
+        
+        threading.Thread(target=fp_thread, daemon=True).start()
+    
+    def _on_fingerprint_complete(self, fingerprint):
+        """Handle completion of IC fingerprinting"""
+        self.is_testing = False
+        self.status_panel.set_idle()
+        
+        if fingerprint.best_match_chip:
+            conf = fingerprint.best_match_confidence
+            if conf >= 0.8:
+                self.status_panel.set_custom_text(
+                    f"ID: {fingerprint.best_match_chip}", Theme.ACCENT_SUCCESS)
+            elif conf >= 0.5:
+                self.status_panel.set_custom_text(
+                    f"Maybe: {fingerprint.best_match_chip}?", Theme.ACCENT_WARNING)
+    
+    def _run_benchmark(self):
+        """Run system performance benchmark"""
+        if not self.arduino.connected:
+            self._log("❌ Connect to Arduino first!", "error")
+            return
+        if self.is_testing:
+            self._log("⚠️ Test already in progress.", "warning")
+            return
+        
+        self.is_testing = True
+        self.status_panel.set_testing()
+        
+        def bench_thread():
+            try:
+                report = self.benchmark.run_full_benchmark(
+                    progress_callback=self._log, iterations=30,
+                )
+                self.root.after(0, lambda: self._on_benchmark_complete(report))
+            except Exception as e:
+                self.root.after(0, lambda: self._handle_test_error(str(e)))
+        
+        threading.Thread(target=bench_thread, daemon=True).start()
+    
+    def _on_benchmark_complete(self, report):
+        """Handle completion of benchmark"""
+        self.is_testing = False
+        self.status_panel.set_idle()
+        self._log(f"\n📋 System limits reference available via PerformanceBenchmark.get_system_limits_doc()", "info")
+    
+    def _run_analog_analysis(self):
+        """Run analog voltage analysis on IC output pins wired to A0-A15"""
+        if not self.arduino.connected:
+            self._log("❌ Connect to Arduino first!", "error")
+            return
+        if self.is_testing:
+            self._log("⚠️ Test already in progress.", "warning")
+            return
+        
+        chip_id = self.chip_panel.get_selected_chip()
+        if not chip_id:
+            messagebox.showerror("No Chip Selected", "Please select a chip.")
+            return
+        
+        chip_data = self.chip_db.get_chip(chip_id, board=self.chip_panel.get_board())
+        if not chip_data:
+            self._log(f"❌ Chip {chip_id} data not found!", "error")
+            return
+        
+        # Build analog pin map from the current pin mapping
+        # Look for pins in the analog range (54-69 = A0-A15)
+        user_mapping = self.pin_mapping_panel.get_mapping()
+        pinout = chip_data.get("pinout", {})
+        
+        analog_pin_map = {}
+        for out in pinout.get("outputs", []):
+            pin_name = out["name"]
+            chip_pin = str(out["pin"])
+            ard_pin = user_mapping.get(chip_pin)
+            if ard_pin is not None:
+                try:
+                    ard_int = int(ard_pin)
+                    if 54 <= ard_int <= 69:
+                        analog_pin_map[pin_name] = ard_int
+                except (ValueError, TypeError):
+                    pass
+        
+        for inp in pinout.get("inputs", []):
+            pin_name = inp["name"]
+            chip_pin = str(inp["pin"])
+            ard_pin = user_mapping.get(chip_pin)
+            if ard_pin is not None:
+                try:
+                    ard_int = int(ard_pin)
+                    if 54 <= ard_int <= 69:
+                        analog_pin_map[pin_name] = ard_int
+                except (ValueError, TypeError):
+                    pass
+        
+        if not analog_pin_map:
+            # No analog pins found — show guide
+            from ..diagnostics.analog_analyzer import AnalogAnalyzer
+            guide = AnalogAnalyzer.get_analog_pin_guide()
+            self._log(guide, "info")
+            self._log(
+                "ℹ️ No pins mapped to analog range (A0-A15 = pins 54-69).\n"
+                "   To use analog analysis, wire IC outputs to analog pins\n"
+                "   and enter the analog pin numbers (54-69) in the mapping.",
+                "warning"
+            )
+            return
+        
+        self._log(
+            f"🔬 Starting analog analysis with {len(analog_pin_map)} pin(s) on analog inputs",
+            "info"
+        )
+        for name, apin in analog_pin_map.items():
+            self._log(f"   {name} → A{apin - 54} (pin {apin})", "info")
+        
+        self.is_testing = True
+        self.status_panel.set_testing()
+        
+        def analog_thread():
+            try:
+                report = self.analog_analyzer.analyze_chip_analog(
+                    chip_data,
+                    analog_pin_map=analog_pin_map,
+                    progress_callback=self._log,
+                )
+                self.root.after(0, lambda: self._on_analog_complete(report))
+            except Exception as e:
+                self.root.after(0, lambda: self._handle_test_error(str(e)))
+        
+        threading.Thread(target=analog_thread, daemon=True).start()
+    
+    def _on_analog_complete(self, report):
+        """Handle completion of analog voltage analysis"""
+        self.is_testing = False
+        self.status_panel.set_idle()
+        
+        health = report.overall_voltage_health
+        if health == "ok":
+            self.status_panel.set_custom_text("Voltages OK", Theme.ACCENT_SUCCESS)
+        elif health == "warning":
+            issues = len(report.marginal_pins) + len(report.noisy_pins)
+            self.status_panel.set_custom_text(
+                f"{issues} voltage warning(s)", Theme.ACCENT_WARNING)
+        else:
+            issues = len(report.floating_pins)
+            self.status_panel.set_custom_text(
+                f"{issues} voltage error(s)", Theme.ACCENT_ERROR)
+    
+    # =========================================================================
     # Pin Migration
     # =========================================================================
     
@@ -769,6 +1342,8 @@ class ICTesterApp:
         self.status_panel.set_idle()
         self.status_panel.reset_stats()
         self.last_result = None
+        self.pin_visualizer.reset()
+        self.dashboard_panel.clear()
         self._log("🔄 Output cleared. Ready for new test.", "info")
     
     def _identify_chip(self):

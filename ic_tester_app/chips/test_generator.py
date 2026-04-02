@@ -1,0 +1,440 @@
+# ic_tester_app/chips/test_generator.py
+# Last edited: 2026-03-19
+# Purpose: Automatic truth table generation and modular test definition builder
+# Dependencies: itertools, json, typing, pathlib
+# Related: chips/database.py, chips/tester.py, diagnostics/fingerprint.py
+
+"""
+Test Generator module.
+
+Provides:
+- Automatic truth table generation for combinational logic ICs
+- Sequential logic test sequence generation (clock-driven, with state tracking)
+- Modular JSON test definition builder for new chips
+- Conversion from observed fingerprint data into test definitions
+"""
+
+import json
+import itertools
+from typing import Optional, Dict, List, Any, Tuple
+from pathlib import Path
+from dataclasses import dataclass, field
+
+from ..logger import get_logger
+from ..config import Config
+
+logger = get_logger("chips.test_generator")
+
+
+@dataclass
+class TestVector:
+    """A single test vector: input values and expected output values."""
+    test_id: str
+    inputs: Dict[str, int]
+    expected_outputs: Dict[str, int]
+    description: str = ""
+    is_sequential: bool = False
+    clock_edges: int = 0
+
+
+@dataclass
+class GeneratedTestSuite:
+    """Collection of generated test vectors for a chip."""
+    chip_id: str
+    vectors: List[TestVector] = field(default_factory=list)
+    logic_type: str = "combinational"
+    gate_function: str = ""
+    num_gates: int = 0
+    notes: str = ""
+
+
+# Common 74-series chip definitions for auto-generation.
+# Maps chip family prefix → (gate_function, gates_per_chip, inputs_per_gate, pin_assignments)
+# Pin assignments: list of (input_pins, output_pin) per gate
+CHIP_TEMPLATES = {
+    # Quad 2-input gates (14-pin DIP)
+    "NAND_QUAD": {
+        "function": "NAND",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A", "1B"], "output": "1Y", "in_pins": [1, 2], "out_pin": 3},
+            {"inputs": ["2A", "2B"], "output": "2Y", "in_pins": [4, 5], "out_pin": 6},
+            {"inputs": ["3A", "3B"], "output": "3Y", "in_pins": [9, 10], "out_pin": 8},
+            {"inputs": ["4A", "4B"], "output": "4Y", "in_pins": [12, 13], "out_pin": 11},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+    "AND_QUAD": {
+        "function": "AND",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A", "1B"], "output": "1Y", "in_pins": [1, 2], "out_pin": 3},
+            {"inputs": ["2A", "2B"], "output": "2Y", "in_pins": [4, 5], "out_pin": 6},
+            {"inputs": ["3A", "3B"], "output": "3Y", "in_pins": [9, 10], "out_pin": 8},
+            {"inputs": ["4A", "4B"], "output": "4Y", "in_pins": [12, 13], "out_pin": 11},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+    "OR_QUAD": {
+        "function": "OR",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A", "1B"], "output": "1Y", "in_pins": [1, 2], "out_pin": 3},
+            {"inputs": ["2A", "2B"], "output": "2Y", "in_pins": [4, 5], "out_pin": 6},
+            {"inputs": ["3A", "3B"], "output": "3Y", "in_pins": [9, 10], "out_pin": 8},
+            {"inputs": ["4A", "4B"], "output": "4Y", "in_pins": [12, 13], "out_pin": 11},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+    "NOR_QUAD": {
+        "function": "NOR",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A", "1B"], "output": "1Y", "in_pins": [1, 2], "out_pin": 3},
+            {"inputs": ["2A", "2B"], "output": "2Y", "in_pins": [4, 5], "out_pin": 6},
+            {"inputs": ["3A", "3B"], "output": "3Y", "in_pins": [9, 10], "out_pin": 8},
+            {"inputs": ["4A", "4B"], "output": "4Y", "in_pins": [12, 13], "out_pin": 11},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+    "XOR_QUAD": {
+        "function": "XOR",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A", "1B"], "output": "1Y", "in_pins": [1, 2], "out_pin": 3},
+            {"inputs": ["2A", "2B"], "output": "2Y", "in_pins": [4, 5], "out_pin": 6},
+            {"inputs": ["3A", "3B"], "output": "3Y", "in_pins": [9, 10], "out_pin": 8},
+            {"inputs": ["4A", "4B"], "output": "4Y", "in_pins": [12, 13], "out_pin": 11},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+    # Hex inverters (14-pin DIP)
+    "NOT_HEX": {
+        "function": "NOT",
+        "logic_type": "combinational",
+        "gates": [
+            {"inputs": ["1A"], "output": "1Y", "in_pins": [1], "out_pin": 2},
+            {"inputs": ["2A"], "output": "2Y", "in_pins": [3], "out_pin": 4},
+            {"inputs": ["3A"], "output": "3Y", "in_pins": [5], "out_pin": 6},
+            {"inputs": ["4A"], "output": "4Y", "in_pins": [9], "out_pin": 8},
+            {"inputs": ["5A"], "output": "5Y", "in_pins": [11], "out_pin": 10},
+            {"inputs": ["6A"], "output": "6Y", "in_pins": [13], "out_pin": 12},
+        ],
+        "vcc": 14, "gnd": 7, "package": "14-pin DIP",
+    },
+}
+
+# Gate logic functions
+GATE_LOGIC = {
+    "AND":    lambda a, b: a & b,
+    "OR":     lambda a, b: a | b,
+    "NAND":   lambda a, b: 1 - (a & b),
+    "NOR":    lambda a, b: 1 - (a | b),
+    "XOR":    lambda a, b: a ^ b,
+    "XNOR":   lambda a, b: 1 - (a ^ b),
+    "NOT":    lambda a: 1 - a,
+    "BUFFER": lambda a: a,
+}
+
+
+class TestGenerator:
+    """
+    Generates test suites for IC chips automatically.
+
+    Supports:
+    - Combinational logic: full truth table enumeration for standard gates
+    - Sequential logic: clock-driven test sequences with state tracking
+    - Custom: conversion from fingerprint observations to test definitions
+    - Export: saves generated tests as JSON chip definitions
+
+    Attributes:
+        chips_dir: Directory containing JSON chip definition files
+    """
+
+    def __init__(self, chips_dir: Optional[Path] = None):
+        """
+        Args:
+            chips_dir: Path to chips/ directory for saving generated definitions
+        """
+        self.chips_dir = chips_dir or Config.CHIPS_DIR
+        logger.info("TestGenerator initialized")
+
+    # ------------------------------------------------------------------
+    # Combinational logic generation
+    # ------------------------------------------------------------------
+
+    def generate_truth_table(
+        self,
+        gate_function: str,
+        input_names: List[str],
+        output_name: str,
+        gate_index: int = 1,
+    ) -> List[TestVector]:
+        """
+        Generate a complete truth table for a logic gate.
+
+        Args:
+            gate_function: Gate type (AND, OR, NAND, NOR, XOR, XNOR, NOT, BUFFER)
+            input_names: List of input pin names
+            output_name: Output pin name
+            gate_index: Gate number for test ID naming
+
+        Returns:
+            List of TestVector covering all input combinations
+        """
+        func = GATE_LOGIC.get(gate_function)
+        if func is None:
+            logger.error(f"Unknown gate function: {gate_function}")
+            return []
+
+        num_inputs = len(input_names)
+        vectors = []
+
+        for combo in itertools.product([0, 1], repeat=num_inputs):
+            # Compute expected output
+            if num_inputs == 1:
+                expected = func(combo[0])
+            elif num_inputs == 2:
+                expected = func(combo[0], combo[1])
+            else:
+                # Chain the function for >2 inputs
+                result = combo[0]
+                for val in combo[1:]:
+                    result = func(result, val)
+                expected = result
+
+            inputs = {input_names[i]: combo[i] for i in range(num_inputs)}
+            in_str = "".join(str(b) for b in combo)
+
+            vectors.append(TestVector(
+                test_id=f"gate{gate_index}_{gate_function}_{in_str}",
+                inputs=inputs,
+                expected_outputs={output_name: expected},
+                description=f"Gate {gate_index}: {gate_function} inputs={in_str} → {expected}",
+            ))
+
+        return vectors
+
+    def generate_chip_test_suite(
+        self,
+        template_key: str,
+    ) -> GeneratedTestSuite:
+        """
+        Generate a full test suite for a chip using a template.
+
+        Args:
+            template_key: Key into CHIP_TEMPLATES (e.g. "NAND_QUAD")
+
+        Returns:
+            GeneratedTestSuite with all test vectors
+        """
+        template = CHIP_TEMPLATES.get(template_key)
+        if template is None:
+            logger.error(f"Unknown chip template: {template_key}")
+            return GeneratedTestSuite(chip_id=template_key)
+
+        suite = GeneratedTestSuite(
+            chip_id=template_key,
+            logic_type=template["function"],
+            gate_function=template["function"],
+            num_gates=len(template["gates"]),
+        )
+
+        for gate_idx, gate in enumerate(template["gates"], 1):
+            vectors = self.generate_truth_table(
+                gate_function=template["function"],
+                input_names=gate["inputs"],
+                output_name=gate["output"],
+                gate_index=gate_idx,
+            )
+            suite.vectors.extend(vectors)
+
+        logger.info(
+            f"Generated {len(suite.vectors)} test vectors for {template_key} "
+            f"({suite.num_gates} gates)"
+        )
+        return suite
+
+    # ------------------------------------------------------------------
+    # Sequential logic support
+    # ------------------------------------------------------------------
+
+    def generate_counter_test(
+        self,
+        clock_pin: str,
+        output_pins: List[str],
+        max_count: int = 16,
+        reset_pin: str = None,
+    ) -> List[TestVector]:
+        """
+        Generate test vectors for a binary counter IC.
+
+        Args:
+            clock_pin: Name of the clock input pin
+            output_pins: Names of output pins (LSB first)
+            max_count: Maximum count to test (default: 16)
+            reset_pin: Optional reset pin name
+
+        Returns:
+            List of TestVector with clock edges and expected counter states
+        """
+        vectors = []
+        num_bits = len(output_pins)
+        max_val = min(max_count, 2 ** num_bits)
+
+        # Reset sequence (if reset pin exists)
+        if reset_pin:
+            vectors.append(TestVector(
+                test_id="counter_reset",
+                inputs={reset_pin: 1, clock_pin: 0},
+                expected_outputs={pin: 0 for pin in output_pins},
+                description="Reset counter to 0",
+                is_sequential=True,
+            ))
+            vectors.append(TestVector(
+                test_id="counter_release_reset",
+                inputs={reset_pin: 0, clock_pin: 0},
+                expected_outputs={pin: 0 for pin in output_pins},
+                description="Release reset",
+                is_sequential=True,
+            ))
+
+        # Count sequence
+        for count in range(max_val):
+            expected = {}
+            for bit_idx, pin in enumerate(output_pins):
+                expected[pin] = (count >> bit_idx) & 1
+
+            vectors.append(TestVector(
+                test_id=f"counter_count_{count}",
+                inputs={clock_pin: 1},
+                expected_outputs=expected,
+                description=f"Count = {count} (binary: {count:0{num_bits}b})",
+                is_sequential=True,
+                clock_edges=count,
+            ))
+
+        logger.info(f"Generated {len(vectors)} counter test vectors (up to {max_val})")
+        return vectors
+
+    # ------------------------------------------------------------------
+    # JSON export
+    # ------------------------------------------------------------------
+
+    def export_as_chip_json(
+        self,
+        suite: GeneratedTestSuite,
+        chip_id: str,
+        chip_name: str,
+        description: str = "",
+        template_key: str = None,
+        save: bool = True,
+    ) -> Dict:
+        """
+        Export a generated test suite as a JSON chip definition file.
+
+        Args:
+            suite: GeneratedTestSuite to export
+            chip_id: Chip identifier (e.g. "SN74LS00N")
+            chip_name: Human-readable chip name
+            description: Chip description
+            template_key: Optional template key for pin assignments
+            save: Whether to save to chips/ directory
+
+        Returns:
+            Dict containing the complete chip definition
+        """
+        template = CHIP_TEMPLATES.get(template_key) if template_key else None
+
+        # Build pinout
+        inputs = []
+        outputs = []
+        if template:
+            for gate in template["gates"]:
+                for i, name in enumerate(gate["inputs"]):
+                    if not any(p["name"] == name for p in inputs):
+                        inputs.append({"pin": gate["in_pins"][i], "name": name})
+                if not any(p["name"] == gate["output"] for p in outputs):
+                    outputs.append({"pin": gate["out_pin"], "name": gate["output"]})
+
+        pinout = {
+            "inputs": inputs,
+            "outputs": outputs,
+        }
+        if template:
+            pinout["vcc"] = template.get("vcc", 14)
+            pinout["gnd"] = template.get("gnd", 7)
+
+        # Build test sequences from vectors
+        tests = []
+        for vec in suite.vectors:
+            test = {
+                "id": vec.test_id,
+                "inputs": {k: "HIGH" if v else "LOW" for k, v in vec.inputs.items()},
+                "expectedOutputs": {k: "HIGH" if v else "LOW" for k, v in vec.expected_outputs.items()},
+                "description": vec.description,
+            }
+            tests.append(test)
+
+        chip_def = {
+            "chipId": chip_id,
+            "name": chip_name,
+            "description": description,
+            "package": template.get("package", "14-pin DIP") if template else "14-pin DIP",
+            "logicType": suite.logic_type,
+            "gateFunction": suite.gate_function,
+            "pinout": pinout,
+            "tests": tests,
+            "generatedBy": "TestGenerator",
+            "notes": suite.notes,
+        }
+
+        if save:
+            filepath = self.chips_dir / f"{chip_id}.json"
+            filepath.write_text(
+                json.dumps(chip_def, indent=2), encoding="utf-8"
+            )
+            logger.info(f"Exported chip definition: {filepath}")
+
+        return chip_def
+
+    def from_fingerprint(
+        self,
+        fingerprint,
+        chip_id: str = "UNKNOWN",
+    ) -> GeneratedTestSuite:
+        """
+        Convert an ICFingerprinter ChipFingerprint into a test suite.
+
+        Uses the observed truth table from fingerprinting as the basis
+        for test vectors. Useful for creating test definitions from
+        unknown chips that were identified via exploratory probing.
+
+        Args:
+            fingerprint: ChipFingerprint from ICFingerprinter
+            chip_id: Chip ID to assign
+
+        Returns:
+            GeneratedTestSuite derived from observed behavior
+        """
+        suite = GeneratedTestSuite(
+            chip_id=chip_id,
+            gate_function=fingerprint.best_match_function or "UNKNOWN",
+            notes="Generated from fingerprint observation",
+        )
+
+        for idx, row in enumerate(fingerprint.derived_truth_table):
+            inputs = row.get("inputs", {})
+            outputs = row.get("outputs", {})
+
+            suite.vectors.append(TestVector(
+                test_id=f"fp_observed_{idx}",
+                inputs={k: v for k, v in inputs.items()},
+                expected_outputs={k: v for k, v in outputs.items()},
+                description=f"Observed behavior row {idx}",
+            ))
+
+        logger.info(
+            f"Generated {len(suite.vectors)} vectors from fingerprint of {chip_id}"
+        )
+        return suite

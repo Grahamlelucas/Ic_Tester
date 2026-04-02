@@ -154,8 +154,10 @@ class ModernButton(tk.Canvas):
             text_color: Text color (default: white)
             **kwargs: Additional Canvas arguments
         """
+        # Inherit canvas background from parent to avoid color mismatches
+        parent_bg = parent.cget('bg') if hasattr(parent, 'cget') else Theme.BG_CARD
         super().__init__(parent, width=width, height=height, 
-                        bg=Theme.BG_CARD, highlightthickness=0, **kwargs)
+                        bg=parent_bg, highlightthickness=0, **kwargs)
         
         self.command = command
         self.text = text

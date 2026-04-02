@@ -18,7 +18,6 @@ from .knowledge_base import ChipKnowledge
 from .session_tracker import SessionTracker
 from .pattern_analyzer import PatternAnalyzer
 from .educator import ChipEducator
-from .datasheet_parser import DatasheetParser, check_pdf_requirements
 
 __all__ = [
     'ChipKnowledge',
@@ -28,3 +27,17 @@ __all__ = [
     'DatasheetParser',
     'check_pdf_requirements'
 ]
+
+
+def __getattr__(name):
+    """Lazily import optional PDF parsing helpers on demand."""
+    if name in {"DatasheetParser", "check_pdf_requirements"}:
+        from .datasheet_parser import DatasheetParser, check_pdf_requirements
+
+        exports = {
+            "DatasheetParser": DatasheetParser,
+            "check_pdf_requirements": check_pdf_requirements,
+        }
+        return exports[name]
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,10 +1,11 @@
-// IC Tester Firmware - Arduino Mega 2560 R3
-// Version 9.0 - Enhanced with timing, stability analysis, direct port I/O, and analog voltage measurement
+// IC Tester Firmware - Arduino Uno R3
+// Version 9.0-UNO - Enhanced with timing, stability analysis, and analog voltage measurement
+// Adapted for Uno R3: 12 digital pins (2-13), 6 analog pins (A0-A5 = 14-19)
 // No display hardware required. Controlled entirely via serial from Python GUI.
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "9.0"
+#define FIRMWARE_VERSION "9.0-UNO"
 
 // TTL voltage thresholds (ADC values, 10-bit: 0-1023 = 0V-5V)
 // Valid LOW:  0V - 0.8V  = ADC 0-163
@@ -114,7 +115,7 @@ void processCommand(String command) {
   }
 
   if (command == "STATUS") {
-    Serial.println("STATUS_OK,MEGA2560,READY");
+    Serial.println("STATUS_OK,UNO_R3,READY");
     return;
   }
 
@@ -261,7 +262,7 @@ void handleReadMultiplePins(String command) {
 }
 
 // RAPID_SAMPLE,pin,count - Take N rapid consecutive reads of a pin for stability analysis.
-// Uses direct digitalRead in tight loop for maximum speed (~4us per sample on Mega).
+// Uses direct digitalRead in tight loop for maximum speed (~4us per sample on Uno).
 // Returns: RAPID_SAMPLE_OK,pin,highCount,lowCount,totalMicros
 void handleRapidSample(String command) {
   int c1 = command.indexOf(',');
@@ -420,7 +421,7 @@ void handleSetAndTime(String command) {
 // ===== Analog Voltage Measurement Commands =====
 
 // ANALOG_READ,pin - Read analog voltage on a single pin.
-// Pin must be an analog-capable pin (A0-A15 = digital 54-69).
+// Pin must be an analog-capable pin (A0-A5 = digital 14-19).
 // Returns: ANALOG_READ_OK,pin,rawADC,millivolts,zone
 // Zone: LOW, UNDEFINED, HIGH (based on TTL thresholds)
 void handleAnalogRead(String command) {
@@ -433,7 +434,7 @@ void handleAnalogRead(String command) {
   }
 
   pinMode(pin, INPUT);
-  int raw = analogRead(pin - 54);  // analogRead uses channel 0-15
+  int raw = analogRead(pin - 14);  // analogRead uses channel 0-5 (A0-A5)
   unsigned int mv = ADC_TO_MV(raw);
 
   Serial.print("ANALOG_READ_OK,");
@@ -469,7 +470,7 @@ void handleAnalogReadPins(String command) {
     int pin = pinData.substring(idx, commaIdx).toInt();
     if (isAnalogPin(pin)) {
       pinMode(pin, INPUT);
-      int raw = analogRead(pin - 54);
+      int raw = analogRead(pin - 14);  // A0-A5 = channels 0-5
       unsigned int mv = ADC_TO_MV(raw);
 
       if (!first) Serial.print(",");
@@ -514,7 +515,7 @@ void handleAnalogRapidSample(String command) {
   if (count > 500) count = 500;
 
   pinMode(pin, INPUT);
-  int channel = pin - 54;
+  int channel = pin - 14;  // A0-A5 = channels 0-5
 
   unsigned int minVal = 1023;
   unsigned int maxVal = 0;
@@ -561,14 +562,14 @@ void handleAnalogRapidSample(String command) {
 }
 
 bool isValidPin(int pin) {
-  // Mega 2560: digital pins 2-53, analog A1-A15 (55-69)
-  // Pin 0,1 reserved for Serial. A0 (54) skipped.
-  if (pin >= 2 && pin <= 53) return true;
-  if (pin >= 55 && pin <= 69) return true;
+  // Uno R3: digital pins 2-13 (pin 0,1 reserved for Serial)
+  // Analog pins A0-A5 = digital pins 14-19
+  if (pin >= 2 && pin <= 13) return true;
+  if (pin >= 14 && pin <= 19) return true;
   return false;
 }
 
 bool isAnalogPin(int pin) {
-  // Analog pins A0-A15 = digital pins 54-69
-  return (pin >= 54 && pin <= 69);
+  // Analog pins A0-A5 = digital pins 14-19
+  return (pin >= 14 && pin <= 19);
 }

@@ -5,15 +5,12 @@
 # Related: gui/theme.py, diagnostics/diagnostic_report.py, intelligence/ml_classifier.py
 
 """
-Dashboard Panel.
+Diagnostics dashboard panel.
 
-Provides a visual summary view showing:
-- Overall test result with large pass/fail indicator
-- Per-pin health bar chart
-- Confidence gauge
-- Fault classification summary from ML
-- Recommendations list
-- Signal stability meter
+This is the condensed, at-a-glance view of everything the rest of the system
+learned from a test. It is intentionally presentation-focused: it does not run
+analysis itself, it renders already-computed results in a way that is easy to
+scan during troubleshooting.
 """
 
 import tkinter as tk
@@ -57,7 +54,8 @@ class DashboardPanel(tk.Frame):
             bg=Theme.BG_CARD, fg=Theme.TEXT_PRIMARY,
         ).pack(side=tk.LEFT)
 
-        # Scrollable content frame
+        # The dashboard can grow vertically once recommendations, per-pin bars,
+        # and ML predictions are populated, so the content area scrolls.
         container = tk.Frame(self, bg=Theme.BG_DARK)
         container.pack(fill=tk.BOTH, expand=True)
 
@@ -109,6 +107,8 @@ class DashboardPanel(tk.Frame):
         Args:
             test_result: ICTester run_test() result dict
         """
+        # This lightweight path is used when only a raw test result is available
+        # and the richer combined diagnostic report has not been generated yet.
         self._clear_all()
 
         chip_id = test_result.get("chipId", "?")
@@ -135,6 +135,8 @@ class DashboardPanel(tk.Frame):
         Args:
             report: DiagnosticReport instance
         """
+        # This richer path consumes the merged diagnostic report that already
+        # blends standard tests, statistics, stability, and fault analysis.
         self._clear_all()
 
         success = report.overall_result == "PASS"

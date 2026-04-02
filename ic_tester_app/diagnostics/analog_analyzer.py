@@ -5,11 +5,18 @@
 # Related: arduino/commands.py (analog_read, analog_rapid_sample), signal_analyzer.py
 
 """
-Analog Analyzer module.
+Analog voltage analysis module.
 
-Uses the Arduino Mega 2560's 10-bit ADC (pins A0-A15, digital 54-69) to measure
-actual voltage levels on IC output pins. This provides deeper insight than digital
-HIGH/LOW readings alone:
+This subsystem complements the normal digital tester by looking at the actual
+measured voltage on a line, not just whether the firmware interpreted it as HIGH
+or LOW. That makes it useful for diagnosing weak outputs, floating nodes, and
+power-rail problems that can hide behind apparently "valid" digital states.
+
+Analysis flow:
+1. Confirm the firmware supports analog commands.
+2. Read or profile one or more analog-capable Arduino pins.
+3. Classify the measured voltages into TTL zones.
+4. Roll those per-pin observations into a chip-level health report.
 
 TTL Voltage Thresholds:
 - Valid LOW:   0.0V - 0.8V  (ADC 0-163,   0-800 mV)
@@ -37,7 +44,8 @@ logger = get_logger("diagnostics.analog_analyzer")
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-# TTL threshold constants (millivolts)
+# TTL threshold constants (millivolts). These define the digital/analog bridge:
+# every measured voltage is eventually described in TTL terms for the user.
 TTL_LOW_MAX_MV = 800
 TTL_HIGH_MIN_MV = 2000
 TTL_NOMINAL_HIGH_MV = 3400
@@ -46,7 +54,7 @@ TTL_NOMINAL_LOW_MV = 200
 # Noise margin thresholds (millivolts from boundary)
 NOISE_MARGIN_WARNING_MV = 200
 
-# Arduino Mega analog pin mapping
+# Arduino analog pin mapping used by the firmware protocol.
 ANALOG_PIN_OFFSET = 54  # A0 = digital 54, A1 = 55, ..., A15 = 69
 ANALOG_PIN_COUNT = 16
 ANALOG_PIN_RANGE = range(ANALOG_PIN_OFFSET, ANALOG_PIN_OFFSET + ANALOG_PIN_COUNT)
@@ -142,7 +150,12 @@ class AnalogAnalyzer:
         logger.info("AnalogAnalyzer initialized")
 
     def check_firmware_support(self) -> bool:
-        """Check if firmware supports analog commands (v9.0+)."""
+        """
+        Check whether the connected firmware understands analog commands.
+
+        The result is cached because this question may be asked many times while
+        the user experiments with analog mapping in the UI.
+        """
         if self._firmware_analog is not None:
             return self._firmware_analog
 
@@ -229,6 +242,8 @@ class AnalogAnalyzer:
             Dict mapping arduino_pin → AnalogPinReading
         """
         results = {}
+        # Keep only analog-capable pins because the firmware's batch analog read
+        # expects board-level analog pin numbers, not arbitrary digital lines.
         analog_pins = [p for p in pin_map if p in ANALOG_PIN_RANGE]
 
         if not analog_pins or not self.check_firmware_support():
@@ -238,6 +253,8 @@ class AnalogAnalyzer:
         response = self.arduino.send_and_receive(cmd, timeout=2.0)
 
         if response and response.startswith("ANALOG_READ_PINS_OK,"):
+            # Parse the compact batch format returned by firmware into richer
+            # per-pin records the UI/report generator can consume directly.
             data = response[len("ANALOG_READ_PINS_OK,"):]
             for entry in data.split(","):
                 parts = entry.split(":")
@@ -340,7 +357,7 @@ class AnalogAnalyzer:
             profile.detail = "Parse error"
             return profile
 
-        # Classify the profile
+        # Convert raw ADC aggregates into human-meaningful health labels.
         self._classify_profile(profile)
         return profile
 
@@ -352,7 +369,8 @@ class AnalogAnalyzer:
             profile.detail = "No samples"
             return
 
-        # Determine dominant zone
+        # Determine which TTL zone dominated the sample window so later code can
+        # talk about the pin in terms of "mostly HIGH", "mostly LOW", etc.
         counts = {
             "LOW": profile.below_low_count,
             "UNDEFINED": profile.in_undefined_count,
@@ -370,7 +388,8 @@ class AnalogAnalyzer:
         else:
             profile.noise_level = "high"
 
-        # Floating pin detection: significant samples in the undefined zone
+        # A floating or weakly-driven line tends to spend a noticeable fraction
+        # of time in the undefined TTL band instead of clustering cleanly high/low.
         undef_ratio = profile.in_undefined_count / total
         if undef_ratio > 0.3:
             profile.is_floating = True
@@ -477,13 +496,16 @@ class AnalogAnalyzer:
                 progress_callback("     Please upload the latest firmware to the Arduino")
             return report
 
-        # 1. Check power rails if VCC/GND are mapped to analog pins
+        # 1. Check power rails first. Bad power can make every later pin profile
+        # look suspicious, so we want that context early in the report.
         vcc_pin_num = pinout.get("vcc")
         gnd_pin_num = pinout.get("gnd")
         self._check_power_rails(report, vcc_pin_num, gnd_pin_num,
                                 analog_pin_map, progress_callback)
 
-        # 2. Profile each mapped output pin
+        # 2. Profile each mapped output pin. Output lines are where analog
+        # health is usually most informative because the chip is actively driving
+        # them and weak/floating behavior is easier to spot.
         output_pins = pinout.get("outputs", [])
         if progress_callback:
             progress_callback(f"\n  📊 Profiling output pin voltages...")
@@ -525,7 +547,8 @@ class AnalogAnalyzer:
                 if profile.health != "ok":
                     progress_callback(f"       → {profile.detail}")
 
-        # 3. Also do single-shot reads on input pins if mapped
+        # 3. Input pins usually do not need full profiling, but a one-shot read
+        # still helps confirm they are sitting in a sane TTL region.
         input_pins = pinout.get("inputs", [])
         for inp in input_pins:
             pin_name = inp["name"]
@@ -544,7 +567,8 @@ class AnalogAnalyzer:
                     f"{reading.voltage_str} [{reading.ttl_zone}]"
                 )
 
-        # 4. Overall health assessment
+        # 4. Collapse the per-pin observations into the summary state shown to
+        # the user and dashboard.
         report.overall_voltage_health = self._assess_overall_health(report)
         report.recommendations = self._generate_recommendations(report)
 
@@ -572,6 +596,9 @@ class AnalogAnalyzer:
         if progress_callback:
             progress_callback(f"\n  ⚡ Power rail check:")
 
+        # Power rails are optional in the analog map. When present, they provide
+        # strong evidence for whether later pin anomalies are chip-related or
+        # simply caused by bad supply/ground wiring.
         # Check VCC
         vcc_name = f"VCC_pin{vcc_pin}" if vcc_pin else None
         if vcc_name and vcc_name in analog_pin_map:

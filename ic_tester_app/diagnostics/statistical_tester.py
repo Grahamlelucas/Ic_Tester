@@ -5,13 +5,18 @@
 # Related: chips/tester.py, diagnostics/diagnostic_report.py
 
 """
-Statistical Tester module.
+Statistical multi-run testing module.
 
-Runs test sequences multiple times and aggregates results to:
-- Detect intermittent failures that single runs miss
-- Build per-pin pass/fail statistics across runs
-- Measure consistency of pin responses over time
-- Generate confidence scores based on statistical evidence
+Single-run testing is good for obvious faults, but intermittent wiring and
+borderline chips often fail only sometimes. This module repeats the same chip
+test several times, aggregates the per-pin outcomes, and turns them into
+stability/confidence signals.
+
+Workflow:
+1. Run the normal chip test N times.
+2. Merge each run's pin diagnostics into aggregate counters.
+3. Detect pins that alternate between good and bad behavior.
+4. Produce a summary report the UI can present as confidence evidence.
 """
 
 import time
@@ -105,6 +110,8 @@ class StatisticalTester:
         Returns:
             StatisticalResult with aggregated statistics
         """
+        # Clamp the run count so the feature stays useful without letting the UI
+        # accidentally launch an excessively long classroom test session.
         if num_runs is None:
             num_runs = self.DEFAULT_RUNS
         num_runs = max(1, min(num_runs, self.MAX_RUNS))
@@ -141,7 +148,8 @@ class StatisticalTester:
             else:
                 result.runs_failed += 1
 
-            # Accumulate per-pin diagnostics from this run
+            # Reuse the same pin-diagnostic structure produced by the core
+            # tester, but merge it into a longer-lived aggregate view.
             self._accumulate_pin_stats(result, run_result, run_idx)
 
             if run_idx < num_runs - 1:
@@ -182,6 +190,8 @@ class StatisticalTester:
             ps.wrong_reads += diag.get("timesWrong", 0)
             ps.error_reads += diag.get("timesError", 0)
 
+            # Preserve the raw HIGH/LOW distribution so later reports can say
+            # whether a failing pin was biased high, biased low, or mixed.
             for val in diag.get("allReadValues", []):
                 if val == "HIGH":
                     ps.high_count += 1
@@ -204,15 +214,16 @@ class StatisticalTester:
             else:
                 ps.consistency_score = 0.0
 
-            # A pin is intermittent if it passes some reads and fails others
-            # but never achieves 100% pass or 100% fail
+            # Intermittent means the pin is neither consistently good nor
+            # consistently bad across repeated runs.
             if ps.wrong_reads > 0 and ps.correct_reads > 0:
                 ps.intermittent = True
                 result.intermittent_pins.append(pin_name)
             elif ps.wrong_reads > 0 and ps.correct_reads == 0:
                 result.stable_failures.append(pin_name)
 
-        # Overall confidence: weighted combination of pass rate and pin consistency
+        # Overall confidence balances "how many whole runs passed" with "how
+        # reliable each individual pin looked across all reads."
         if result.per_pin_stats:
             avg_consistency = sum(
                 ps.consistency_score for ps in result.per_pin_stats.values()

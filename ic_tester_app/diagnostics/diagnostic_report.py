@@ -5,18 +5,12 @@
 # Related: diagnostics/statistical_tester.py, diagnostics/signal_analyzer.py, intelligence/pattern_analyzer.py
 
 """
-Diagnostic Report module.
+Unified diagnostic report module.
 
-Combines results from:
-- Standard test runs (pass/fail per test vector)
-- Statistical multi-run analysis (intermittent detection)
-- Signal stability analysis (flickering, propagation delay)
-- Pattern analysis (wiring mistakes, fault classification)
-
-Generates structured reports suitable for:
-- GUI display with severity coloring
-- JSON export for ML training data
-- Historical comparison and trend analysis
+This file is where the app's different analysis streams are merged into one
+structured artifact. Instead of every UI component or export path having to
+know about raw test results, statistical reruns, signal analysis, and pattern
+mistake objects separately, they can all consume one `DiagnosticReport`.
 """
 
 import json
@@ -146,7 +140,8 @@ class DiagnosticReportGenerator:
             raw_test_result=test_result,
         )
 
-        # Overall result
+        # First determine the session-level headline result before enriching it
+        # with per-pin evidence from the other analysis sources.
         if test_result.get("success"):
             report.overall_result = "PASS"
         elif test_result.get("error"):
@@ -154,7 +149,8 @@ class DiagnosticReportGenerator:
         else:
             report.overall_result = "FAIL"
 
-        # Build per-pin diagnostics from test result
+        # The raw tester output is the base layer. Later merges refine these pin
+        # entries with statistical stability, signal timing, and fault labels.
         self._merge_test_diagnostics(report, test_result)
 
         # Merge statistical data if available

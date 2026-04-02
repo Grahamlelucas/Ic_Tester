@@ -4,13 +4,15 @@
 # Dependencies: None
 
 """
-Pattern Analyzer module.
+Failure-pattern analysis module.
 
-Uses algorithmic analysis to:
-- Detect common wiring mistakes
-- Identify likely chip misidentification
-- Suggest corrections based on failure patterns
-- Calculate confidence scores for test results
+This layer turns raw test failures into likely human explanations. It does not
+change the hardware result; it interprets it by looking for recognizable
+signatures such as stuck pins, all-inverted outputs, missing power, or a likely
+wrong chip/orientation.
+
+The analyzer is deliberately heuristic. It is trying to answer "what should the
+user check next?" rather than prove a fault mathematically.
 """
 
 from typing import Dict, List, Optional, Tuple, Any
@@ -41,7 +43,7 @@ class ConfidenceScore:
     factors: List[str]  # Reasons affecting confidence
 
 
-# Common wiring mistake patterns and their signatures
+# Common mistake signatures used as a shared vocabulary for the analyzer and UI.
 MISTAKE_SIGNATURES = {
     "vcc_gnd_swapped": {
         "description": "VCC and GND appear to be swapped",
@@ -167,6 +169,8 @@ class PatternAnalyzer:
             List of possible wiring mistakes, sorted by confidence
         """
         mistakes = []
+        # Combine several narrower heuristics into one ranked list. Each helper
+        # contributes a different perspective on the same failed result.
         
         # Check pin verification
         if not results.get('pinsVerified', True):
@@ -215,7 +219,8 @@ class PatternAnalyzer:
         if problem_pins:
             affected = [p['chip_pin'] for p in problem_pins]
             
-            # Check for adjacent pin swaps
+            # Adjacent failures are a strong clue for off-by-one placement on a
+            # breadboard or header row.
             for i, pin in enumerate(affected):
                 if pin + 1 in affected or pin - 1 in affected:
                     mistakes.append(WiringMistake(
@@ -250,7 +255,8 @@ class PatternAnalyzer:
         tests_failed = results.get('testsFailed', 0)
         pin_diag = results.get('pinDiagnostics', {})
 
-        # -- Stuck-pin analysis from pinDiagnostics --
+        # Pin diagnostics already capture repeat-read behavior, so start there
+        # before falling back to broader whole-test heuristics.
         stuck_pins = self._analyze_stuck_pins(pin_diag)
         mistakes.extend(stuck_pins)
 
@@ -259,7 +265,8 @@ class PatternAnalyzer:
         if inverted:
             mistakes.extend(inverted)
 
-        # All tests failed
+        # If every vector failed, broad setup mistakes become more likely than a
+        # single bad output wire.
         if tests_run > 0 and tests_failed == tests_run:
             mistakes.append(WiringMistake(
                 type="wrong_chip_orientation",
@@ -277,7 +284,8 @@ class PatternAnalyzer:
                 suggested_fix=MISTAKE_SIGNATURES["wrong_chip_model"]["fix"]
             ))
         
-        # Partial failures - analyze which gates/functions failed
+        # Partial failures usually point to a subset of outputs or an incomplete
+        # mapping problem rather than total power/orientation failure.
         elif tests_failed > 0 and tests_failed < tests_run:
             # Identify failing output pins from testDetails
             output_failures = self._identify_failing_outputs(failed_tests, chip_id)
@@ -356,7 +364,8 @@ class PatternAnalyzer:
             if not wrongs:
                 continue
             total_pins += 1
-            # Check if every wrong reading is the inverse of expected
+            # Look for the special case where every bad reading is exactly the
+            # opposite of expected rather than simply noisy or missing.
             all_inverted = all(
                 (w['expected'] == 'HIGH' and w['actual'] == 'LOW') or
                 (w['expected'] == 'LOW' and w['actual'] == 'HIGH')
@@ -426,6 +435,8 @@ class PatternAnalyzer:
         """
         factors = []
         
+        # Confidence is not just "how many tests passed". We separately score the
+        # trustworthiness of wiring, functional behavior, and chip identity.
         # Wiring confidence
         wiring_conf = 1.0 if results.get('pinsVerified', False) else 0.3
         if wiring_conf < 1.0:
@@ -461,13 +472,15 @@ class PatternAnalyzer:
         else:
             identity_conf = 0.9
         
-        # Factor in historical performance
+        # Historical success matters because a sudden failure on a chip the user
+        # normally wires correctly often means a one-off setup mistake.
         if historical_success_rate is not None:
             if historical_success_rate > 0.8 and test_conf < 0.5:
                 factors.append("Unusual failure for a chip you usually pass")
                 identity_conf *= 0.8  # More likely wrong chip or wiring
         
-        # Calculate overall confidence
+        # Weighted blend: wiring and actual test vectors matter most, while chip
+        # identity confidence is informative but slightly less direct.
         overall = (wiring_conf * 0.4 + 
                   test_conf * 0.4 + identity_conf * 0.2)
         

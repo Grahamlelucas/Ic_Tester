@@ -4,9 +4,14 @@
 # Dependencies: tkinter, json, pathlib
 
 """
-Pin Mapping Panel module.
-Allows users to define which Arduino pins connect to each chip pin.
-Includes validation, save/load functionality.
+Pin-mapping editor panel.
+
+This panel is the bridge between the physical jumper wires on the desk and the
+logical chip definition in the software. Its main responsibilities are:
+1. render one editable Arduino-pin field per relevant chip pin,
+2. explain any extra hardware requirements attached to the chip definition,
+3. validate the user's mapping before hardware tests run,
+4. save/load mappings so repeated classroom setups are faster.
 """
 
 import json
@@ -98,7 +103,8 @@ class PinMappingPanel:
         )
         self.requirements_label.pack(anchor=tk.W, pady=(0, 8))
         
-        # Scrollable frame for pin entries
+        # Pin lists can get long, especially on larger packages, so the editor
+        # lives in a scrollable canvas rather than trying to resize the window.
         canvas_frame = tk.Frame(self.frame, bg=Theme.BG_CARD)
         canvas_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -144,7 +150,8 @@ class PinMappingPanel:
         Args:
             chip_data: Chip definition dictionary or None to clear
         """
-        # Clear existing entries
+        # Rebuild the editor from scratch whenever the selected chip changes so
+        # there is no stale wiring state from the previously selected chip.
         for widget in self.pin_mapping_frame.winfo_children():
             widget.destroy()
         self.pin_entries.clear()
@@ -162,7 +169,9 @@ class PinMappingPanel:
         
         pinout = chip_data.get('pinout', {})
         
-        # Get all pin numbers and sort them
+        # Gather every non-power/non-metadata pin that should appear in the UI.
+        # Some chip definitions describe pins in multiple places, so we merge
+        # the sources into one sorted list before rendering.
         pin_numbers = []
         for key in pinout.keys():
             if key not in ['vcc', 'gnd', 'description', 'inputs', 'outputs', 'noConnect']:
@@ -322,6 +331,8 @@ class PinMappingPanel:
         
         errors = []
         warnings = []
+        # Track reverse ownership so we can explain duplicate-pin conflicts in
+        # terms of both the Arduino pin and the chip pin that claimed it first.
         used_pins = {}  # arduino_pin: chip_pin
         valid_mapping = {}
         
@@ -362,7 +373,8 @@ class PinMappingPanel:
                 entry.config(bg=Theme.ACCENT_ERROR)
                 continue
             
-            # Check for reserved pins
+            # Reserved pins are allowed with a warning because some advanced
+            # setups may still choose to use them intentionally.
             if arduino_pin in Config.RESERVED_PINS:
                 warnings.append(f"Chip pin {chip_pin}: Pin {arduino_pin} reserved for {Config.RESERVED_PINS[arduino_pin]}")
                 entry.config(bg=Theme.ACCENT_WARNING)
@@ -392,7 +404,8 @@ class PinMappingPanel:
             for warn in warnings:
                 self.log(f"   • {warn}", "warning")
         
-        # Store valid mapping
+        # Cache only the validated mapping so the tester can consume a clean
+        # structure without re-parsing widget values again.
         self.user_pin_mapping = valid_mapping
         
         io_count = len([p for p in valid_mapping.values() if p != 'PWR'])
@@ -428,7 +441,8 @@ class PinMappingPanel:
             self.log("⚠️ No chip selected", "warning")
             return
         
-        # Gather current entries
+        # Save exactly what the user typed so it round-trips cleanly, including
+        # analog-style labels such as `A0` if they were entered that way.
         mapping_data = {
             "chipId": chip_id,
             "mappings": {}
@@ -484,7 +498,8 @@ class PinMappingPanel:
                 self.log(f"⚠️ Mapping file is for {mapping_data.get('chipId')}, not {chip_id}", "warning")
                 return
             
-            # Apply mappings to entries
+            # Replay the stored mapping back into the current entry widgets. Any
+            # pins that are not present in the current chip definition are ignored.
             mappings = mapping_data.get("mappings", {})
             loaded_count = 0
             
@@ -501,7 +516,8 @@ class PinMappingPanel:
             self.status_label.config(text=f"Loaded: {filename.name}", fg=Theme.ACCENT_SUCCESS)
             logger.info(f"Loaded pin mapping from {filename}")
             
-            # Auto-validate after loading
+            # Validate immediately so the panel colors/status reflect whether the
+            # restored mapping is still legal for the current board/rules.
             self.validate()
             
         except Exception as e:
@@ -523,7 +539,8 @@ class PinMappingPanel:
             if not self.validate():
                 return None
         
-        # Convert to the format expected by the tester
+        # Convert widget-oriented integer keys into the exact string-key format
+        # expected by the chip tester JSON mapping structure.
         mapping = {}
         for chip_pin, arduino_pin in self.user_pin_mapping.items():
             if arduino_pin != "PWR":

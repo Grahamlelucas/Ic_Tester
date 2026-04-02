@@ -4,15 +4,14 @@
 # Dependencies: json, pathlib
 
 """
-Chip Knowledge Base module.
+Structured chip knowledge base.
 
-Contains structured knowledge about 74-series TTL chips including:
-- Chip families and their characteristics
-- Common applications and use cases
-- Pin function explanations
-- Logic truth tables in human-readable form
-- Typical wiring patterns
-- Known compatibility with other chips
+Unlike the runtime tester, this module is mostly static reference material. It
+holds the curated facts the rest of the "teaching" features rely on:
+- what a chip/family does in plain English,
+- what mistakes are common for that part,
+- what concepts should be learned before it,
+- what related chips make sense next.
 """
 
 import json
@@ -453,6 +452,8 @@ class ChipKnowledge:
         Args:
             custom_knowledge_path: Optional path to custom knowledge JSON
         """
+        # Start with the built-in curriculum/reference data, then optionally
+        # layer custom JSON knowledge on top for local extensions.
         self.families = CHIP_FAMILIES.copy()
         self.insights = CHIP_INSIGHTS.copy()
         self.patterns = WIRING_PATTERNS.copy()
@@ -469,7 +470,8 @@ class ChipKnowledge:
             with open(path, 'r') as f:
                 data = json.load(f)
             
-            # Merge custom insights
+            # Merge by chip ID so custom entries can add new chips or override
+            # the built-in description/tips for an existing one.
             for chip_id, insight_data in data.get('insights', {}).items():
                 self.insights[chip_id] = ChipInsight(**insight_data)
             
@@ -534,7 +536,8 @@ class ChipKnowledge:
         if not insight:
             return ["7400", "7404"]  # Default starting chips
         
-        # Get related chips sorted by difficulty
+        # Keep the recommendation simple: start from explicit related-chip links,
+        # then sort them by difficulty so the path feels like a progression.
         related = []
         for chip_id in insight.related_chips:
             rel_insight = self.insights.get(chip_id)

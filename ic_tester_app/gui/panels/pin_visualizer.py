@@ -5,14 +5,12 @@
 # Related: gui/theme.py, gui/app.py, diagnostics/diagnostic_report.py
 
 """
-Pin Visualizer Panel.
+Graphical chip/pin visualizer.
 
-Provides:
-- Graphical DIP chip layout with numbered pin indicators
-- Live HIGH/LOW state coloring per pin during testing
-- Fault severity highlighting (green/yellow/red per pin)
-- Real-time diagnostic feedback overlay
-- Interactive tooltips showing pin function and status
+This panel translates abstract pin diagnostics into a physical DIP-style layout
+so users can map software feedback back onto the real chip sitting on the
+breadboard. It is primarily a visualization layer; it consumes test/report
+data produced elsewhere and redraws the package accordingly.
 """
 
 import tkinter as tk
@@ -136,7 +134,8 @@ class PinVisualizer(tk.Frame):
         pinout = chip_data.get("pinout", {})
         package = chip_data.get("package", "14-pin DIP")
 
-        # Determine pin count from package string or pinout
+        # Prefer the declared package string, but fall back to inferring the pin
+        # count from the actual pinout when the package metadata is incomplete.
         try:
             self.num_pins = int(package.split("-")[0])
         except (ValueError, IndexError):
@@ -153,7 +152,8 @@ class PinVisualizer(tk.Frame):
                 all_pins.add(gnd)
             self.num_pins = max(all_pins) if all_pins else 14
 
-        # Build pin info map
+        # Build one lookup describing every visible pin so the draw/update code
+        # can treat inputs, outputs, and power pins uniformly.
         pin_info = {}
         for p in pinout.get("inputs", []):
             pin_info[p["pin"]] = {"name": p["name"], "type": "input", "desc": p.get("description", "")}

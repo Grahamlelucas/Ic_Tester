@@ -5,13 +5,12 @@
 # Related: chips/database.py, chips/tester.py, diagnostics/fingerprint.py
 
 """
-Test Generator module.
+Automatic test-definition generator.
 
-Provides:
-- Automatic truth table generation for combinational logic ICs
-- Sequential logic test sequence generation (clock-driven, with state tracking)
-- Modular JSON test definition builder for new chips
-- Conversion from observed fingerprint data into test definitions
+This module is about authoring chip definitions rather than executing them. It
+can synthesize test vectors from known logic templates, build simple sequential
+counter sequences, and convert observed fingerprint data back into a reusable
+test suite.
 """
 
 import json
@@ -48,9 +47,8 @@ class GeneratedTestSuite:
     notes: str = ""
 
 
-# Common 74-series chip definitions for auto-generation.
-# Maps chip family prefix → (gate_function, gates_per_chip, inputs_per_gate, pin_assignments)
-# Pin assignments: list of (input_pins, output_pin) per gate
+# Built-in templates describe the structural information needed to generate a
+# first-pass JSON definition for common chip layouts.
 CHIP_TEMPLATES = {
     # Quad 2-input gates (14-pin DIP)
     "NAND_QUAD": {
@@ -190,6 +188,8 @@ class TestGenerator:
         num_inputs = len(input_names)
         vectors = []
 
+        # Enumerate every binary input combination and compute the expected
+        # output row exactly once.
         for combo in itertools.product([0, 1], repeat=num_inputs):
             # Compute expected output
             if num_inputs == 1:
@@ -240,6 +240,8 @@ class TestGenerator:
             num_gates=len(template["gates"]),
         )
 
+        # Concatenate each gate's truth table into one suite representing the
+        # whole packaged IC.
         for gate_idx, gate in enumerate(template["gates"], 1):
             vectors = self.generate_truth_table(
                 gate_function=template["function"],
@@ -282,6 +284,8 @@ class TestGenerator:
         num_bits = len(output_pins)
         max_val = min(max_count, 2 ** num_bits)
 
+        # For sequential parts we generate an ordered scenario instead of a flat
+        # truth table, because expected outputs depend on prior clock events.
         # Reset sequence (if reset pin exists)
         if reset_pin:
             vectors.append(TestVector(
@@ -299,7 +303,7 @@ class TestGenerator:
                 is_sequential=True,
             ))
 
-        # Count sequence
+        # Then step through each expected count value in LSB-first bit order.
         for count in range(max_val):
             expected = {}
             for bit_idx, pin in enumerate(output_pins):
@@ -346,6 +350,8 @@ class TestGenerator:
         """
         template = CHIP_TEMPLATES.get(template_key) if template_key else None
 
+        # Reconstruct the JSON schema expected by the runtime chip database from
+        # the richer generated suite/template structures.
         # Build pinout
         inputs = []
         outputs = []
@@ -365,7 +371,7 @@ class TestGenerator:
             pinout["vcc"] = template.get("vcc", 14)
             pinout["gnd"] = template.get("gnd", 7)
 
-        # Build test sequences from vectors
+        # Convert 0/1 vector values into the HIGH/LOW strings used by the tester.
         tests = []
         for vec in suite.vectors:
             test = {
@@ -417,6 +423,9 @@ class TestGenerator:
         Returns:
             GeneratedTestSuite derived from observed behavior
         """
+        # This path converts empirical observations back into authored tests,
+        # which is useful when exploring an unknown part and then preserving the
+        # discovered behavior as a reusable definition.
         suite = GeneratedTestSuite(
             chip_id=chip_id,
             gate_function=fingerprint.best_match_function or "UNKNOWN",

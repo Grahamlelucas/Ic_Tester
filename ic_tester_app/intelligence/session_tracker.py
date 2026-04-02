@@ -4,13 +4,14 @@
 # Dependencies: json, pathlib, datetime
 
 """
-Session Tracker module.
+Persistent session-history tracker.
 
-Records and analyzes test sessions to:
-- Track which chips are tested most frequently
-- Identify recurring failure patterns
-- Measure user improvement over time
-- Build personalized recommendations
+This is the app's memory layer. Every completed test can be recorded here so
+later features can answer questions like:
+- which chips the user is practicing most,
+- whether they are improving,
+- what failure modes recur,
+- what hints or next-chip recommendations make sense.
 """
 
 import json
@@ -93,7 +94,7 @@ class SessionTracker:
         self.stats_file = self.data_dir / "chip_stats.json"
         self.progress_file = self.data_dir / "user_progress.json"
         
-        # Load existing data
+        # These in-memory structures back all later history/education queries.
         self.history: List[TestResult] = []
         self.chip_stats: Dict[str, ChipStats] = {}
         self.user_progress = UserProgress()
@@ -103,6 +104,8 @@ class SessionTracker:
     
     def _load_data(self):
         """Load existing session data from files"""
+        # Each file is loaded independently so one corrupt JSON file does not
+        # wipe out the rest of the user's historical data.
         # Load history
         if self.history_file.exists():
             try:
@@ -133,6 +136,8 @@ class SessionTracker:
     def _save_data(self):
         """Save session data to files"""
         try:
+            # Persist the three views separately so they stay human-inspectable
+            # and easy to export/debug.
             # Save history
             with open(self.history_file, 'w') as f:
                 json.dump([asdict(r) for r in self.history], f, indent=2)
@@ -165,7 +170,8 @@ class SessionTracker:
         """
         now = datetime.now().isoformat()
         
-        # Extract failure reasons from results
+        # Extract compact failure tags from the richer result payload so trends
+        # can be counted later without reprocessing whole result dictionaries.
         failure_reasons = []
         if not results.get('pinsVerified', True):
             failure_reasons.append("pin_verification_failed")
@@ -186,7 +192,7 @@ class SessionTracker:
             duration_seconds=duration
         )
         
-        # Add to history
+        # Append raw history first, then refresh aggregate views derived from it.
         self.history.append(result)
         
         # Update chip stats
@@ -228,7 +234,7 @@ class SessionTracker:
                 (stats.average_duration * (n - 1) + result.duration_seconds) / n
             )
         
-        # Calculate improvement trend (compare recent vs older tests)
+        # Recompute the simple improvement signal after each new observation.
         self._calculate_improvement_trend(chip_id)
     
     def _calculate_improvement_trend(self, chip_id: str):
@@ -238,7 +244,8 @@ class SessionTracker:
         if len(chip_history) < 4:
             return  # Not enough data
         
-        # Compare first half vs second half success rates
+        # This is intentionally simple: compare early performance with later
+        # performance rather than trying to fit a sophisticated model.
         mid = len(chip_history) // 2
         first_half = chip_history[:mid]
         second_half = chip_history[mid:]
@@ -257,6 +264,8 @@ class SessionTracker:
         learning = []
         struggling = []
         
+        # Bucket each chip into a coarse learning state that the educator can
+        # later use for encouragement and recommendations.
         for chip_id, stats in self.chip_stats.items():
             if stats.total_tests < 2:
                 continue
@@ -276,7 +285,7 @@ class SessionTracker:
         self.user_progress.total_sessions = len(self.history)
         self.user_progress.total_chips_tested = len(self.chip_stats)
         
-        # Calculate overall success rate
+        # Aggregate all chip stats into a single headline success rate.
         total_success = sum(s.successful_tests for s in self.chip_stats.values())
         total_tests = sum(s.total_tests for s in self.chip_stats.values())
         
@@ -340,6 +349,7 @@ class SessionTracker:
             "focus_areas": []
         }
         
+        # These recommendations are heuristic coaching cues, not strict rules.
         # Chips needing more practice (learning category with < 80% success)
         for chip_id in self.user_progress.chips_learning:
             rate = self.get_success_rate(chip_id)

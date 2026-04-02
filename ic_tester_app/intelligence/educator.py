@@ -4,14 +4,11 @@
 # Dependencies: knowledge_base, session_tracker
 
 """
-Chip Educator module.
+Context-aware educational helper.
 
-Provides contextual educational content including:
-- Just-in-time learning hints
-- Explanations of test failures
-- Chip functionality tutorials
-- Wiring guidance
-- Progress-aware suggestions
+This module sits on top of the knowledge base and session history. Instead of
+just showing static facts, it selects the most relevant hints/explanations for
+the user's current chip and recent performance.
 """
 
 from typing import Dict, List, Optional, Any
@@ -81,6 +78,8 @@ class ChipEducator:
         family_name = self.knowledge.get_chip_family(chip_id)
         family = self.knowledge.get_family_info(family_name) if family_name else None
         
+        # Build a single structured payload the GUI can render in different ways
+        # without re-querying the knowledge base and tracker separately.
         intro = {
             "chip_id": chip_id,
             "plain_english": insight.plain_english if insight else f"IC chip {chip_id}",
@@ -93,13 +92,13 @@ class ChipEducator:
             "user_history": None
         }
         
-        # Add tips for first-time users
+        # Start with chip-specific tips from the curated knowledge base.
         if insight:
             intro["tips_before_testing"] = [
                 f"📌 {tip}" for tip in insight.tips[:3]
             ]
         
-        # Add user-specific context
+        # Then layer on personalized context from the user's actual history.
         stats = self.tracker.get_chip_stats(chip_id)
         if stats:
             success_rate = stats.successful_tests / stats.total_tests if stats.total_tests > 0 else 0
@@ -131,6 +130,8 @@ class ChipEducator:
             List of relevant hints
         """
         hints = []
+        # This method intentionally mixes generic chip knowledge with personal
+        # history so pre-test guidance feels contextual rather than canned.
         insight = self.knowledge.get_chip_insight(chip_id)
         stats = self.tracker.get_chip_stats(chip_id)
         
@@ -182,7 +183,7 @@ class ChipEducator:
                         related_chips=[chip_id]
                     ))
         
-        # Sort by priority
+        # Lower numeric priority means "show earlier".
         hints.sort(key=lambda h: h.priority)
         return hints
     
@@ -198,6 +199,8 @@ class ChipEducator:
         Returns:
             Dict with explanation, learning points, and next steps
         """
+        # Build one explanation bundle that can drive the output log, dashboard,
+        # or future coaching UI without recomputing the logic.
         explanation = {
             "summary": "",
             "learning_points": [],
@@ -212,7 +215,8 @@ class ChipEducator:
         tests_total = results.get('testsRun', 0)
         
         if success:
-            # Test passed - celebrate and suggest next steps
+            # Successful runs are a chance to reinforce what the chip does and
+            # steer the learner toward a sensible next step.
             explanation["summary"] = f"✅ Great job! The {chip_id} passed all tests."
             explanation["celebration"] = self._get_celebration(chip_id)
             
@@ -238,7 +242,8 @@ class ChipEducator:
                         f"🏆 You've mastered the {chip_id}! ({rate:.0%} success rate)"
                     )
         else:
-            # Test failed - provide educational explanation
+            # Failed runs focus on learning value and next actions instead of
+            # merely restating that the test failed.
             explanation["summary"] = self._explain_failure(chip_id, results)
             
             # Learning points from failure
@@ -256,7 +261,8 @@ class ChipEducator:
                     f"this suggests a partial wiring issue, not a bad chip"
                 )
 
-            # Add pin-specific learning from diagnostics
+            # Convert low-level pin diagnostics into short learning-oriented
+            # language the user can act on.
             pin_diag = results.get('pinDiagnostics', {})
             stuck_pins = []
             for pname, d in pin_diag.items():

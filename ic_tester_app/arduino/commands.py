@@ -4,8 +4,17 @@
 # Dependencies: None (uses connection module)
 
 """
-Arduino commands module.
-Defines the command protocol and provides helper functions for IC testing operations.
+Arduino command helpers.
+
+This module sits one level above the raw serial connection and translates
+semantic operations used by the GUI/test engine into the firmware's string
+protocol.
+
+The main jobs here are:
+- normalize board-specific pin rules after handshake,
+- format commands consistently,
+- parse firmware replies into Python dictionaries,
+- keep board detection and validation logic in one place.
 """
 
 from typing import Optional, Dict, List, Tuple
@@ -25,7 +34,12 @@ class ArduinoCommands:
     - Board-specific pin range validation
     """
     
-    # Board-specific pin configurations
+    # Board-specific pin configurations.
+    #
+    # The rest of the app reasons in "Arduino pin numbers", so both digital and
+    # analog channels are normalized into the numeric ranges reported by the
+    # firmware. That lets the GUI and diagnostics use one validation model per
+    # board instead of hard-coding Mega/Uno rules everywhere.
     BOARD_CONFIGS = {
         "MEGA2560": {
             "digital_pins": (2, 53),  # pins 2-53
@@ -45,6 +59,8 @@ class ArduinoCommands:
             connection: ArduinoConnection instance
         """
         self.conn = connection
+        # Board metadata is filled in immediately so callers can validate pin
+        # mappings as soon as a connection is established.
         self.board_type = None
         self.pin_config = None
         self._detect_board_type()
@@ -144,7 +160,8 @@ class ArduinoCommands:
         if not pin_states:
             return True
         
-        # Format: BSET,pin1:state1,pin2:state2,...
+        # Bundle state changes into one command where supported by the firmware.
+        # This reduces serial round-trips during larger setup/reset operations.
         pairs = [f"{pin}:{state}" for pin, state in pin_states.items()]
         command = f"BSET,{','.join(pairs)}"
         response = self.conn.send_and_receive(command)
@@ -207,7 +224,14 @@ class ArduinoCommands:
     # =========================================================================
     
     def _detect_board_type(self):
-        """Detect board type from STATUS command and configure pin ranges."""
+        """
+        Detect board type from the firmware STATUS response.
+
+        This is the bridge between "a serial device is connected" and
+        "the rest of the app now knows which pins are legal". If detection
+        fails we fall back to Mega behavior because that was the original
+        hardware target and is the least surprising legacy default.
+        """
         try:
             response = self.conn.send_and_receive("STATUS", timeout=1.0)
             if response and "STATUS_OK" in response:
@@ -275,7 +299,8 @@ class ArduinoCommands:
         Returns:
             True if successful
         """
-        # Set all to INPUT first, then LOW
+        # Drive every tracked line LOW in a predictable way before a new test so
+        # the previous chip state does not leak into the next measurement.
         modes = {pin: "OUTPUT" for pin in pins}
         states = {pin: "LOW" for pin in pins}
         
@@ -297,6 +322,8 @@ class ArduinoCommands:
         Returns:
             Dict with high_count, low_count, duration_us or None on error
         """
+        # The firmware does the tight sampling loop because Python serial latency
+        # is far too slow and jittery for stability analysis.
         command = f"RAPID_SAMPLE,{pin},{count}"
         response = self.conn.send_and_receive(command, timeout=2.0)
         
@@ -329,6 +356,8 @@ class ArduinoCommands:
         Returns:
             Dict with samples string (H/L chars), duration_us or None on error
         """
+        # This mode captures a compact H/L waveform snapshot on the board and
+        # returns the compressed sample string to Python for analysis.
         command = f"TIMED_READ,{pin},{interval_us},{count}"
         response = self.conn.send_and_receive(command, timeout=3.0)
         
@@ -360,6 +389,8 @@ class ArduinoCommands:
         Returns:
             Dict with prev_state, new_state, delay_us, timed_out or None on error
         """
+        # Used for propagation-delay style measurements: flip one line, then let
+        # firmware time how long the observed output takes to follow.
         command = f"SET_AND_TIME,{set_pin},{state},{read_pin}"
         response = self.conn.send_and_receive(command, timeout=2.0)
         
@@ -411,6 +442,8 @@ class ArduinoCommands:
             Dict with raw (0-1023), millivolts (0-5000), zone (LOW/UNDEFINED/HIGH)
             or None on error
         """
+        # Validate first so callers get a clean Python-side failure instead of
+        # firing a command the board can only reject later.
         if not self.is_valid_analog_pin(pin):
             logger.error(f"Pin {pin} is not a valid analog pin for {self.board_type}")
             return None
@@ -446,6 +479,9 @@ class ArduinoCommands:
         Returns:
             Dict mapping pin → {raw, millivolts, zone}
         """
+        # Keep the command focused on legal analog channels for the detected
+        # board. This is especially important when users switch between Mega and
+        # Uno mappings without restarting the GUI.
         # Filter out invalid pins
         valid_pins = [p for p in pins if self.is_valid_analog_pin(p)]
         if len(valid_pins) != len(pins):
@@ -492,6 +528,7 @@ class ArduinoCommands:
             Dict with min/max/avg ADC values, zone distribution counts,
             and duration_us, or None on error
         """
+        # Like `rapid_sample`, but for voltage zones rather than binary logic.
         if not self.is_valid_analog_pin(pin):
             logger.error(f"Pin {pin} is not a valid analog pin for {self.board_type}")
             return None

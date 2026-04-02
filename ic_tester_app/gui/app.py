@@ -5,15 +5,25 @@
 # Related: diagnostics/, intelligence/ml_classifier.py, performance/benchmark.py
 
 """
-Main GUI Application module.
-Coordinates all GUI panels and manages the IC testing workflow.
+Main GUI application coordinator.
+
+This module is the glue between the visible interface and the lower-level
+services that talk to the Arduino, load chip definitions, run diagnostics, and
+explain results.
+
+High-level flow:
+1. Build the Tk window and child panels.
+2. Connect to a board and learn its valid pin ranges.
+3. Collect the selected chip and user wiring map.
+4. Run the blocking hardware test on a background thread.
+5. Fan the result out to the output log, dashboard, analytics, and helpers.
 """
 
 import time
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Dict
+from typing import Dict, Optional
 
 from .theme import Theme, get_fonts
 from .widgets import ModernButton, HelpDialog
@@ -59,14 +69,15 @@ class ICTesterApp:
     
     def __init__(self):
         """Initialize the application"""
-        # Setup logging first
+        # Configure logging first so every later startup stage can report useful
+        # diagnostics if it fails.
         setup_logging()
         logger.info(f"Starting {Config.APP_NAME} v{Config.APP_VERSION}")
         
-        # Ensure directories exist
+        # Create runtime directories before any subsystem tries to persist files.
         Config.ensure_directories()
         
-        # Create main window
+        # Create the root Tk window before instantiating UI panels.
         self.root = tk.Tk()
         self.root.title(Config.APP_NAME)
         self.root.geometry(f"{Config.WINDOW_START_WIDTH}x{Config.WINDOW_START_HEIGHT}")
@@ -76,21 +87,21 @@ class ICTesterApp:
         # Get fonts
         self.fonts = get_fonts()
         
-        # Initialize core components
+        # Core hardware/test services.
         self.arduino = ArduinoConnection()
         self.chip_db = ChipDatabase(
             board=Config.DEFAULT_BOARD
         )
         self.tester = ICTester(self.arduino, self.chip_db)
         
-        # Initialize intelligence system
+        # Result-explanation and learning helpers.
         self.knowledge = ChipKnowledge()
         self.session_tracker = SessionTracker()
         self.pattern_analyzer = PatternAnalyzer()
         self.educator = ChipEducator(self.knowledge, self.session_tracker)
         self.migration_helper = PinMigrationHelper(self.chip_db)
         
-        # Initialize advanced diagnostics (Phases 1-7)
+        # Advanced diagnostic tools that can be run after or alongside core tests.
         self.statistical_tester = StatisticalTester(self.tester)
         self.signal_analyzer = SignalAnalyzer(self.arduino)
         self.report_generator = DiagnosticReportGenerator()
@@ -100,7 +111,7 @@ class ICTesterApp:
         self.benchmark = PerformanceBenchmark(self.arduino)
         self.analog_analyzer = AnalogAnalyzer(self.arduino)
         
-        # State tracking
+        # Cross-panel runtime state used to coordinate asynchronous work.
         self.is_testing = False
         self._previous_chip_id = None
         self._previous_chip_mapping = None
@@ -111,20 +122,25 @@ class ICTesterApp:
         self._last_connect_time = time.time()  # Initialize to now (prevents early disconnect)
         self._monitor_enabled = True  # Can disable monitor temporarily
         
-        # Build UI
+        # Build widgets after services exist so callbacks can bind directly.
         self._create_ui()
         
-        # Auto-scan ports on startup
+        # Delay the first scan slightly so the window paints immediately.
         self.root.after(100, self._scan_ports)
         
-        # Start connection monitoring
+        # Background polling keeps the UI synchronized with unplug/replug events.
         self._start_connection_monitor()
         self._start_event_poller()
         
         logger.info("Application initialized successfully")
 
     def _get_ml_classifier(self) -> Optional[MLFaultClassifier]:
-        """Create the ML classifier lazily so startup does not depend on session data."""
+        """
+        Create the ML classifier only when it is actually needed.
+
+        This keeps the main GUI startup path independent from optional model or
+        session-data issues.
+        """
         if self.ml_classifier is None:
             try:
                 self.ml_classifier = MLFaultClassifier()
@@ -158,7 +174,7 @@ class ICTesterApp:
         # ── Style the Notebook tabs ──
         self._style_notebook()
         
-        # Trigger initial chip selection
+        # Prime the mapping panel and pin visualizer with the initial chip.
         if self.chip_db.get_chip_count() > 0:
             chip_id = self.chip_panel.get_selected_chip()
             if chip_id:
@@ -193,7 +209,8 @@ class ICTesterApp:
         self._sidebar_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sidebar_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Sidebar mousewheel scrolling
+        # Normalize wheel scrolling across platforms so every nested widget in
+        # the sidebar still scrolls the same canvas.
         def _on_sidebar_scroll(event):
             if platform.system() == "Darwin":
                 self._sidebar_canvas.yview_scroll(int(-1 * event.delta), "units")
@@ -474,7 +491,13 @@ class ICTesterApp:
             self._log("⚠️ No Arduino devices found. Check USB connection.", "warning")
     
     def _connect_arduino(self):
-        """Connect to the selected Arduino port"""
+        """
+        Connect to the selected Arduino port and refresh board-aware UI state.
+
+        After a successful handshake this method pushes the detected board type
+        and valid pin ranges into the connection panel so mapping validation and
+        user guidance stay aligned with the hardware that is actually attached.
+        """
         if self.arduino.connected:
             self._log("ℹ️ Already connected.", "info")
             return
@@ -490,7 +513,8 @@ class ICTesterApp:
         self.connection_panel.set_connecting()
         self.root.update()
         
-        # Set grace period BEFORE connect (prevent race condition with monitor)
+        # Record the attempt time before opening the port so the connection
+        # monitor ignores the expected board reset/boot window.
         self._last_connect_time = time.time()
         
         if self.arduino.connect(port):
@@ -535,7 +559,9 @@ class ICTesterApp:
     def _start_connection_monitor(self):
         """Start monitoring connection health - runs every 5 seconds"""
         def check_connection():
-            # Only check if monitor is enabled and connected
+            # The monitor is intentionally conservative: it waits out a grace
+            # period after connect and requires two failed checks before it
+            # declares the board gone.
             if self._monitor_enabled and self.arduino.connected:
                 # Grace period: skip checks within 10 seconds of connection
                 elapsed = time.time() - self._last_connect_time
@@ -657,8 +683,13 @@ class ICTesterApp:
     # =========================================================================
     
     def _run_test(self):
-        """Run test on the selected chip"""
-        # Validate connection
+        """
+        Validate UI state, capture the active mapping, and launch a chip test.
+
+        The actual hardware workflow runs on a worker thread so Tk stays
+        responsive while serial commands and settle delays are in flight.
+        """
+        # Validate connection before doing any chip/mapping work.
         if not self.arduino.connected:
             messagebox.showerror("Not Connected", 
                                "Please connect to Arduino first.")
@@ -679,7 +710,7 @@ class ICTesterApp:
             self._log(f"❌ Chip {chip_id} data not found!", "error")
             return
         
-        # Validate pin mapping
+        # Validate the user-edited mapping before any hardware writes happen.
         if not self.pin_mapping_panel.validate():
             messagebox.showerror("Invalid Pin Mapping", 
                                "Please configure valid Arduino pin mappings.")
@@ -692,7 +723,8 @@ class ICTesterApp:
             self._log("❌ No valid pin mapping!", "error")
             return
         
-        # Start test
+        # Lock the UI into test mode before the worker thread starts so users
+        # cannot accidentally queue overlapping runs.
         self.is_testing = True
         self.test_start_time = __import__('time').time()
         self.status_panel.set_testing()
@@ -703,7 +735,7 @@ class ICTesterApp:
                 
         self.output_panel.log_test_start(chip_id)
         
-        # Show pre-test hints from intelligence system
+        # These hints are explanatory only; they do not alter the real test.
         hints = self.educator.get_pre_test_hints(chip_id)
         for hint in hints[:2]:  # Show top 2 hints
             self._log(f"💡 {hint.title}: {hint.content}", "info")
@@ -711,7 +743,8 @@ class ICTesterApp:
         # Store mapping for later analysis
         self._current_test_mapping = user_mapping
         
-        # Run in thread
+        # Keep Tk operations on the main thread. The worker only performs the
+        # blocking tester call, then marshals the result back with `after`.
         def test_thread():
             try:
                 results = self.tester.run_test(chip_id, 
@@ -725,7 +758,12 @@ class ICTesterApp:
         threading.Thread(target=test_thread, daemon=True).start()
     
     def _display_results(self, results: dict):
-        """Display test results with intelligence analysis"""
+        """
+        Feed one completed hardware result into all post-processing layers.
+
+        This includes the visible UI updates plus the educational, analytical,
+        and historical subsystems that build on top of the raw pass/fail data.
+        """
         import time
         self.is_testing = False
         self.chip_panel.set_testing(False)
@@ -734,7 +772,8 @@ class ICTesterApp:
         # Calculate test duration
         duration = time.time() - self.test_start_time if self.test_start_time else 0
         
-        # Record test in session tracker for learning
+        # Persist the run so later hints, confidence scores, and analytics can
+        # reason about the user's historical patterns.
         chip_id = results.get('chipId', self.chip_panel.get_selected_chip())
         self.session_tracker.record_test(
             chip_id=chip_id,
@@ -743,13 +782,15 @@ class ICTesterApp:
             duration=duration
         )
         
-        # Get confidence score from pattern analyzer
+        # Confidence blends the immediate test result with prior history so the
+        # feedback is more contextual than a bare pass/fail badge.
         historical_rate = self.session_tracker.get_success_rate(chip_id)
         confidence = self.pattern_analyzer.calculate_confidence(
             chip_id, results, historical_rate
         )
         
-        # Check for pin verification failures
+        # Wiring failures short-circuit the rest of the happy-path UI because
+        # the most useful next step is to fix connections first.
         if not results.get('pinsVerified', True):
             self.status_panel.set_pin_error()
             self._log_pin_error(results)
@@ -783,7 +824,8 @@ class ICTesterApp:
         self._show_pin_diagnostics(results)
         
         # === Advanced Diagnostics Integration ===
-        # Update pin visualizer from test results
+        # Use the same raw result payload to update all deeper analysis views so
+        # the dashboard stays consistent with the log.
         self.pin_visualizer.update_from_test_result(results)
         
         # Generate diagnostic report

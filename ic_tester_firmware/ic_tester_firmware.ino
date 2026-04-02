@@ -1,5 +1,14 @@
 // IC Tester Firmware - Arduino Mega 2560 R3
-// Version 9.0 - Enhanced with timing, stability analysis, direct port I/O, and analog voltage measurement
+// Version 9.0 - Enhanced with timing, stability analysis, direct port I/O,
+// and analog voltage measurement.
+//
+// Architectural overview:
+// - The Python GUI sends one line-oriented command at a time over serial.
+// - This firmware parses the command, validates pins, performs the hardware
+//   action locally on the board, then prints a compact response line.
+// - Time-sensitive work stays in firmware because microsecond-scale sampling
+//   and propagation timing are not practical from Python over USB serial.
+//
 // No display hardware required. Controlled entirely via serial from Python GUI.
 
 #include <Arduino.h>
@@ -37,7 +46,8 @@ void setup() {
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
 
-  // Boot LED blink
+  // Boot LED blink gives a visible sign that the board reset completed and also
+  // consumes a short startup delay before the host begins talking to us.
   for (int i = 0; i < 3; i++) {
     digitalWrite(LED_PIN, HIGH);
     delay(150);
@@ -45,10 +55,13 @@ void setup() {
     delay(150);
   }
 
+  // `READY` is the host-side handshake anchor used during connection.
   Serial.println("READY");
 }
 
 void loop() {
+  // The protocol is intentionally simple: each command is one newline-delimited
+  // string, handled synchronously, then answered with one response line.
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
     command.trim();
@@ -59,6 +72,8 @@ void loop() {
 }
 
 void processCommand(String command) {
+  // Dispatch the incoming command to the matching handler. The explicit
+  // if/return structure keeps the protocol easy to read and extend in class.
   if (command == "PING") {
     Serial.println("PONG");
     return;
@@ -150,6 +165,7 @@ void processCommand(String command) {
 }
 
 void handleSetPin(String command) {
+  // Format: SET_PIN,<pin>,<HIGH|LOW>
   int firstComma = command.indexOf(',');
   int secondComma = command.indexOf(',', firstComma + 1);
   if (secondComma < 0) {
@@ -182,6 +198,7 @@ void handleSetPin(String command) {
 }
 
 void handleReadPin(String command) {
+  // Format: READ_PIN,<pin>
   int comma = command.indexOf(',');
   int pin = command.substring(comma + 1).toInt();
 
@@ -200,6 +217,7 @@ void handleReadPin(String command) {
 }
 
 void handleSetMultiplePins(String command) {
+  // Format: SET_PINS,<pin>:<state>,<pin>:<state>,...
   int startIdx = command.indexOf(',') + 1;
   String pinData = command.substring(startIdx);
   int setCount = 0;

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Build Script for IC Tester Pro
-Creates a standalone application that can be distributed without Python installed.
+Build script for packaging the legacy desktop app.
+
+This uses PyInstaller to turn the monolithic `ic_tester.py` entrypoint plus its
+bundled chip definitions into a distributable folder/app so users do not need a
+local Python environment.
 
 Usage:
     python3 build_app.py
@@ -18,7 +21,15 @@ import shutil
 from pathlib import Path
 
 def build_app():
-    """Build the IC Tester Pro application"""
+    """
+    Build the distributable desktop application.
+
+    Process:
+    1. Detect host platform so PyInstaller data-path syntax is correct.
+    2. Bundle the `chips/` JSON assets alongside the executable.
+    3. Include serial/tkinter hidden imports that PyInstaller may miss.
+    4. Run PyInstaller and print distribution guidance for the result.
+    """
     
     print("=" * 60)
     print("IC Tester Pro - Build Script")
@@ -40,7 +51,8 @@ def build_app():
         "--clean",              # Clean build cache
         "--noconfirm",          # Replace existing output without asking
         
-        # Add the chips folder as data
+        # Add the chip-definition database so the packaged app can still load
+        # test vectors without requiring a separate repository checkout.
         "--add-data", f"chips{':' if system != 'Windows' else ';'}chips",
         
         # Hidden imports that PyInstaller might miss

@@ -5,7 +5,15 @@
 
 """
 Arduino connection module.
-Handles serial port discovery, connection, and basic communication.
+
+This layer is intentionally small and procedural because every higher-level
+system depends on it behaving predictably:
+
+1. Discover likely Arduino serial ports.
+2. Open the selected serial device without causing unnecessary resets.
+3. Wait for the firmware boot banner / handshake.
+4. Provide safe send/receive helpers to the rest of the app.
+5. Separate normal command replies from asynchronous firmware events.
 """
 
 import time
@@ -22,16 +30,22 @@ logger = get_logger("arduino.connection")
 
 class ArduinoConnection:
     """
-    Manages serial communication with Arduino Mega 2560.
-    
-    Handles port discovery, connection establishment, and basic
-    send/receive operations.
+    Manage serial communication with the tester firmware.
+
+    The GUI, tester, and diagnostics layers all funnel through this object so
+    they do not each need to worry about serial timing, disconnect behavior, or
+    handshake details.
     """
     
     def __init__(self):
+        # `_serial` holds the live pyserial object after a successful connect.
         self._serial: Optional[serial.Serial] = None
+        # `_connected` tracks logical connection state; it is cleared on any
+        # send/read failure so the UI can react immediately.
         self._connected: bool = False
         self._port: Optional[str] = None
+        # Firmware can emit out-of-band `EVT,...` lines while a test is running.
+        # We queue them here so command/response reads stay deterministic.
         self._event_queue: List[str] = []
         
         logger.info("ArduinoConnection initialized")
@@ -60,7 +74,9 @@ class ArduinoConnection:
             port_name = port.device
             description = port.description.lower()
             
-            # Check various Arduino indicators
+            # We intentionally use a broad heuristic here because classrooms
+            # often use genuine boards, clones, CH340 adapters, and different
+            # USB naming conventions across macOS, Windows, and Linux.
             is_arduino = (
                 'arduino' in description or
                 'mega' in description or
@@ -106,9 +122,13 @@ class ArduinoConnection:
             self._serial.dtr = False
             self._port = port
             
-            # Wait for Arduino reset.
-            # IMPORTANT: do not spam commands during boot; some firmware variants
-            # only emit READY reliably if serial input is quiet.
+            # Wait for the firmware to finish booting.
+            #
+            # Important behavior:
+            # - Opening a serial port can reset many Arduino boards.
+            # - During that reset window the firmware may miss early commands.
+            # - Listening for `READY` first is more reliable than immediately
+            #   sending traffic and hoping the board is already running.
             time.sleep(0.3)
             ready_timeout = 10.0
             start_time = time.time()
@@ -125,7 +145,9 @@ class ArduinoConnection:
                         return True
                 time.sleep(0.05)
 
-            # If READY was missed, try explicit PING retries.
+            # If the boot banner was missed, fall back to active probing.
+            # This keeps reconnects resilient when the OS or serial adapter
+            # drops buffered startup text before Python can read it.
             for attempt in range(3):
                 try:
                     self._serial.reset_input_buffer()
@@ -188,6 +210,8 @@ class ArduinoConnection:
             return False
         
         try:
+            # Every firmware command is line-oriented. Appending `\n` keeps the
+            # protocol easy to debug in the Arduino serial monitor as well.
             self._serial.write(f"{command}\n".encode('utf-8'))
             logger.debug(f"Sent: {command}")
             return True
@@ -217,6 +241,8 @@ class ArduinoConnection:
                     if not response:
                         continue
                     if response.startswith("EVT,"):
+                        # Event lines are not direct replies to the command that
+                        # is currently waiting, so stash them for the event poller.
                         self._event_queue.append(response)
                         logger.debug(f"Queued event: {response}")
                         continue
@@ -244,6 +270,8 @@ class ArduinoConnection:
         if not self.send_command(command):
             return None
         
+        # A short inter-command gap prevents back-to-back GUI operations from
+        # overrunning slower firmware handlers.
         time.sleep(Config.COMMAND_DELAY)
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -281,6 +309,8 @@ class ArduinoConnection:
         if not self._serial:
             return False
         try:
+            # Clear both directions so a previous failed test cannot poison the
+            # next handshake or pin operation with stale bytes.
             self._serial.reset_input_buffer()
             self._serial.reset_output_buffer()
             self._event_queue.clear()

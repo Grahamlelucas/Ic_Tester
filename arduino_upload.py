@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """
-Arduino Auto-Upload Utility
-Compiles and uploads Arduino sketches using Arduino CLI
+Arduino upload helper.
+
+This script wraps the Arduino CLI for the common classroom workflow:
+1. confirm the CLI/toolchain exists,
+2. find a likely board port,
+3. compile the sketch,
+4. upload it to the connected board.
+
+The default configuration currently targets the Mega firmware sketch.
 """
 
 import subprocess
@@ -9,7 +16,8 @@ import os
 import sys
 import serial.tools.list_ports
 
-# Configuration
+# Configuration for the default upload target. The main README now explains
+# that Uno users should upload the Uno sketch instead.
 SKETCH_PATH = os.path.join(os.path.dirname(__file__), "ic_tester_firmware", "ic_tester_firmware.ino")
 BOARD_FQBN = "arduino:avr:mega"  # Mega 2560
 
@@ -39,7 +47,8 @@ def find_mega_port():
     
     for port in ports:
         desc = port.description.lower()
-        # Mega 2560 usually shows as these
+        # Use a deliberately broad match because many classroom boards are
+        # clones with CH340 adapters or generic USB descriptions.
         if 'mega' in desc or 'arduino' in desc or 'ch340' in desc or 'usb' in desc:
             print(f"📟 Found: {port.device} - {port.description}")
             return port.device
@@ -91,7 +100,7 @@ def upload_sketch(sketch_path, port):
         return False
 
 def compile_and_upload(sketch_path=None, port=None):
-    """Main function to compile and upload"""
+    """Main function to compile and upload."""
     if sketch_path is None:
         sketch_path = SKETCH_PATH
     

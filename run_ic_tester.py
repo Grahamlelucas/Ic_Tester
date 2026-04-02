@@ -25,11 +25,20 @@ For the legacy single-file version, use:
 import sys
 import os
 
-# Add project root to path
+# Add the project root to `sys.path` so the launcher still works when users
+# run this file directly instead of installing the package first.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
-    """Launch the IC Tester application"""
+    """
+    Launch the GUI application from the repository root.
+
+    Process overview:
+    1. Print a startup breadcrumb so double-click / terminal launches show progress.
+    2. Import the real GUI entrypoint lazily so missing dependencies fail with a
+       friendly message instead of a raw stack trace during module import.
+    3. Construct the Tk application object and hand over control to its event loop.
+    """
     try:
         print("Launching IC Tester Pro GUI...", flush=True)
         from ic_tester_app.gui.app import ICTesterApp

@@ -1,6 +1,11 @@
 """
-IC Tester - Full Testing System with GUI
-Version 4.0 - Modern UI with Cross-Platform Support
+Legacy single-file IC tester application.
+
+This file predates the newer modular `ic_tester_app/` package and keeps the
+entire workflow in one script: theme setup, serial connection, GUI widgets, and
+chip-testing behavior. It is still useful as a standalone/distribution target,
+so the high-level architecture is documented here even though most new work is
+landing in the modular package.
 """
 
 import serial
@@ -51,6 +56,9 @@ class Theme:
     # Fonts - cross-platform
     @staticmethod
     def get_fonts():
+        # Font families are selected per platform so the UI uses native-looking
+        # typography instead of relying on one stack that may not exist
+        # everywhere this classroom project runs.
         system = platform.system()
         if system == "Darwin":  # macOS
             return {
@@ -82,7 +90,13 @@ class Theme:
 
 
 class ArduinoConnection:
-    """Handles Arduino serial communication"""
+    """
+    Legacy serial helper used by the monolithic app.
+
+    It follows the same basic process as the modular implementation:
+    discover ports, open serial, wait for READY/PONG, then expose a few thin
+    helpers for line-based command/response traffic.
+    """
     
     def __init__(self):
         self.arduino = None
@@ -115,6 +129,8 @@ class ArduinoConnection:
         """Connect to Arduino on specified port"""
         try:
             self.arduino = serial.Serial(port, 9600, timeout=2)
+            # Opening the serial port resets many Arduino boards, so the legacy
+            # app waits before attempting handshake traffic.
             time.sleep(2)  # Wait for Arduino reset
             
             # Wait for READY message

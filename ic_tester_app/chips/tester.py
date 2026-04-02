@@ -4,15 +4,17 @@
 # Dependencies: time
 
 """
-IC Tester module.
-Contains the core testing logic for 74-series integrated circuits.
+IC test execution engine.
 
-This module handles:
-- Arduino connectivity check
-- Pin connection verification  
-- Running test sequences
-- Chip identification
-- Result collection and reporting
+This module is the core runtime path for an actual chip test. It takes the
+selected chip definition plus a resolved Arduino pin mapping and performs the
+entire hardware workflow:
+
+1. Confirm the Arduino is still alive.
+2. Confirm the wired chip is responding to basic state changes.
+3. Execute every JSON-defined test vector.
+4. Track per-pin reliability so the GUI can explain failures.
+5. Optionally probe definitions to guess whether the wrong chip is inserted.
 """
 
 import time
@@ -22,7 +24,7 @@ from ..logger import get_logger
 
 logger = get_logger("chips.tester")
 
-# Type alias for progress callback function
+# Type alias for the GUI logger callback used throughout the test pipeline.
 ProgressCallback = Optional[Callable[[str], None]]
 
 
@@ -74,20 +76,23 @@ class ICTester:
         Returns:
             Tuple of (success: bool, message: str)
         """
-        # Quick check: is the USB port still present?
+        # First make sure the operating system still sees the USB device.
+        # This catches hard disconnects before we start a test sequence.
         if not self.arduino.is_port_alive():
             logger.error("Arduino USB port is no longer available")
             return (False, "Arduino disconnected - USB port not found. "
                     "Check cable and try reconnecting.")
         
-        # Clear any stale data in serial buffer before PING
+        # Clear stale bytes from a previous test/handshake so the PING probe does
+        # not accidentally read an old response and produce a false positive.
         if not self.arduino.clear_buffer():
             logger.error("Failed to clear serial buffer - port may have dropped")
             return (False, "Arduino connection lost during buffer clear. "
                     "Try unplugging and re-plugging the USB cable.")
         time.sleep(0.1)
         
-        # Send a test command to verify Arduino is responding (with retries)
+        # The board may still be settling after reconnect or buffer clear, so a
+        # few retries make the check tolerant without hiding persistent failure.
         max_retries = 3
         for attempt in range(max_retries):
             response = self.arduino.send_and_receive("PING", timeout=2.0)
@@ -116,8 +121,10 @@ class ICTester:
         """
         Verify all pin connections by running initial test patterns.
         
-        Uses the first 2 tests from the chip's test sequence to verify
-        that the chip is responding correctly. Uses 3x voting for reliability.
+        Uses the first 2 tests from the chip's test sequence to verify that the
+        chip can actually change state and that each output line responds in the
+        expected direction. Reads use 3x voting so one noisy sample does not
+        immediately look like a wiring fault.
         
         Args:
             chip_data: Chip definition dictionary
@@ -143,7 +150,8 @@ class ICTester:
         if progress_callback:
             progress_callback(f"🔌 Running pin verification for {chip_id}...")
         
-        # Build lookups for pin names and types
+        # Convert the JSON pinout into quick lookups so the verification code can
+        # work in terms of semantic pin names instead of repeatedly scanning lists.
         input_pins = {p['name']: p['pin'] for p in pinout.get('inputs', [])}
         output_pins = {p['name']: p['pin'] for p in pinout.get('outputs', [])}
         
@@ -151,6 +159,8 @@ class ICTester:
         def set_pin(arduino_pin: int, state: str) -> bool:
             """Set a pin with verification"""
             for attempt in range(3):
+                # We deliberately talk to the firmware at the raw command level
+                # here because verification wants tight control over retry timing.
                 self.arduino.send_command(f"SET_PIN,{arduino_pin},{state}")
                 response = self.arduino.read_response()
                 if response and "SET_PIN_OK" in response:
@@ -190,7 +200,8 @@ class ICTester:
                     reads.append("ERROR")
                 time.sleep(0.03)
             
-            # Majority vote
+            # Majority vote smooths out transient read glitches caused by loose
+            # jumpers or a chip output still settling.
             high_count = reads.count("HIGH")
             low_count = reads.count("LOW")
             error_count = reads.count("ERROR")
@@ -250,7 +261,9 @@ class ICTester:
             output_str = ", ".join([f"{name}={state2.get(name,'?')}" for name in output_pins.keys()])
             progress_callback(f"    Read: {output_str}")
         
-        # Check: Did any outputs change between states?
+        # Before comparing against exact expectations, check for the more basic
+        # failure mode: none of the outputs changed at all. That almost always
+        # points to missing power, ground, or a badly seated chip.
         any_changed = any(state1.get(pin) != state2.get(pin) for pin in output_pins.keys())
         
         if not any_changed:
@@ -478,7 +491,9 @@ class ICTester:
             logger.error(f"Chip {chip_id} not found in database")
             return {"success": False, "error": f"Chip {chip_id} not found"}
         
-        # Use custom mapping if provided
+        # The GUI can override the JSON mapping with a user-edited wiring table.
+        # To preserve the database entry, we clone the chip definition first and
+        # attach the custom mapping only to this one test run.
         if custom_mapping:
             chip_data = chip_data.copy()
             chip_data['arduinoMapping'] = {
@@ -488,7 +503,9 @@ class ICTester:
                 progress_callback(f"📌 Using user-defined pin mapping ({len(custom_mapping)} pins)")
             logger.info(f"Using custom pin mapping with {len(custom_mapping)} pins")
         
-        # Initialize results
+        # `results` is intentionally verbose because multiple downstream systems
+        # consume it: the output log, dashboard, ML classifier, pattern analyzer,
+        # report generator, and session history.
         results = {
             "chipId": chip_id,
             "chipName": chip_data['name'],
@@ -503,7 +520,8 @@ class ICTester:
             "pinsVerified": False
         }
 
-        # Pre-populate pinDiagnostics for every output pin
+        # Pre-populate diagnostics for every output pin so later code can update
+        # counters without repeatedly checking whether a record exists.
         for out_pin in chip_data.get('pinout', {}).get('outputs', []):
             pin_name = out_pin['name']
             results['pinDiagnostics'][pin_name] = {
@@ -531,7 +549,9 @@ class ICTester:
             results["error"] = f"Arduino check failed: {arduino_msg}"
             return results
         
-        # Step 2: Verify pin connections
+        # Step 2: Verify pin connections before running the full vector list.
+        # Failing early here gives much better feedback than letting dozens of
+        # tests fail because one jumper is misplaced.
         pins_ok, pins_msg, problem_pins = self.verify_pin_connections(chip_data, progress_callback)
         results["pinsVerified"] = pins_ok
         results["problemPins"] = problem_pins
@@ -547,12 +567,13 @@ class ICTester:
         
         # Note: Pin setup already done during verification - skip redundant setup
         
-        # Step 5: Run all tests
+        # Step 3: Run the chip's full truth-table / test-vector sequence.
         tests = chip_data['testSequence']['tests']
         all_input_pins = [p['name'] for p in chip_data.get('pinout', {}).get('inputs', [])]
         mapping = chip_data.get('arduinoMapping', {}).get('io', {})
 
-        # Build physical-pin lookup for output pins: name → (chip_pin, arduino_pin)
+        # Build physical-pin lookups once so the progress log can always explain
+        # failures in terms of both the logical signal name and the real wire.
         output_pin_info = {}
         for out_pin in chip_data.get('pinout', {}).get('outputs', []):
             pname = out_pin['name']
@@ -568,7 +589,8 @@ class ICTester:
             apin = mapping.get(str(cpin), '?')
             input_pin_info[pname] = (cpin, apin)
 
-        # Track per-pin consecutive failure count for real-time callouts
+        # Consecutive failure streaks help distinguish a one-off mismatch from a
+        # likely unplugged or stuck output line.
         pin_fail_streak = {name: 0 for name in output_pin_info}
 
         for test in tests:
@@ -589,7 +611,8 @@ class ICTester:
             if progress_callback:
                 progress_callback(f"Test {test_id}: {description}")
             
-            # Reset all inputs to LOW before each test
+            # Start every vector from a clean baseline so no previous test leaves
+            # an input asserted accidentally.
             for pin_name in all_input_pins:
                 if self._abort_flag:
                     break
@@ -598,7 +621,7 @@ class ICTester:
                 continue
             time.sleep(0.05)
             
-            # Set test-specific inputs
+            # Apply only the inputs relevant to this vector after the reset pass.
             for pin_name, state in test['inputs'].items():
                 if self._abort_flag:
                     break
@@ -611,7 +634,8 @@ class ICTester:
             
             time.sleep(0.1)  # Allow chip to settle
             
-            # Read and verify outputs
+            # Read the observable outputs and compare them to the expected
+            # truth-table row defined in the chip JSON.
             test_passed = True
             actual_outputs = {}
             this_test_failures = []
@@ -636,7 +660,8 @@ class ICTester:
                         progress_callback(f"    ✗ {pin_name} (pin {cpin} → Arduino {apin}): "
                                          f"got {actual_state}, expected {expected_state}")
             
-            # Record result
+            # Keep a per-test record so the UI can show exactly which vector
+            # failed instead of only summarizing pass/fail totals.
             test_result = {
                 "testId": test_id,
                 "description": description,
@@ -691,7 +716,9 @@ class ICTester:
         
         results['success'] = results['testsFailed'] == 0
 
-        # Finalize per-pin diagnostics: detect stuck pins
+        # Finalize per-pin diagnostics after all vectors have run. This derives a
+        # higher-level label such as STUCK HIGH or INTERMITTENT from the raw
+        # counters collected above.
         for pin_name, diag in results['pinDiagnostics'].items():
             reads = diag['allReadValues']
             valid_reads = [r for r in reads if r in ('HIGH', 'LOW')]
@@ -732,6 +759,9 @@ class ICTester:
         
         logger.info("Starting chip identification")
         
+        # Identification is intentionally lightweight: we compare only a small
+        # subset of patterns across all known chips so the user gets a quick hint
+        # rather than waiting for full exhaustive testing of every definition.
         all_chips = self.chip_db.get_all_chip_ids(board=board)
         results = []
         

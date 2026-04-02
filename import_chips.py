@@ -1,5 +1,12 @@
 """
-Import chips from Smart IC Tester database.txt format to our JSON format
+Chip-database conversion utility.
+
+This script converts a legacy text database format into the JSON structure used
+by the tester application. The conversion pipeline is:
+1. parse raw chip entries from the source text file,
+2. decode pattern characters into input/output expectations,
+3. infer a simple pinout,
+4. emit the normalized JSON definition used by the app.
 """
 import json
 import os
@@ -12,7 +19,8 @@ def parse_database(filename):
     with open(filename, 'r') as f:
         content = f.read()
     
-    # Split by chip entries (starts with $)
+    # Each chip entry starts with `$`, so splitting on that marker turns the
+    # flat text export into per-chip chunks we can parse independently.
     entries = re.split(r'\n\$', content)
     
     for entry in entries:
@@ -63,7 +71,8 @@ def convert_pattern_to_test(pattern, pin_count):
     inputs = {}
     expected_outputs = {}
     
-    # Remove the G (ground marker) to split pattern
+    # `G` marks the ground divider between the low-numbered and high-numbered
+    # halves of the package in the source pattern syntax.
     if 'G' in pattern:
         parts = pattern.split('G')
         left = parts[0]
@@ -97,7 +106,8 @@ def convert_pattern_to_test(pattern, pin_count):
                 elif char == 'C':
                     inputs[pin] = 'CLOCK'
         
-        # Process right side (high pin numbers, but reversed in pattern)
+        # The source format lists the package's right side in reverse order, so
+        # flip it before mapping characters back onto physical pin numbers.
         right_reversed = right[::-1]  # Patterns list right side in reverse
         for i, char in enumerate(right_reversed):
             if i < len(right_pins):
@@ -128,7 +138,8 @@ def create_json_chip(chip_data):
         gnd_pin = 8
         vcc_pin = 16
     
-    # Build tests from patterns
+    # Turn the textual truth-table patterns into the `tests` structure consumed
+    # by the runtime tester.
     tests = []
     for i, pattern in enumerate(chip_data['patterns'][:8]):  # Limit to 8 tests
         inputs, outputs = convert_pattern_to_test(pattern, pin_count)
@@ -144,7 +155,9 @@ def create_json_chip(chip_data):
     input_pins = []
     output_pins = []
     
-    # Analyze first few patterns to determine inputs vs outputs
+    # Infer which pins behave like inputs vs outputs by inspecting the first few
+    # patterns. This is heuristic, but good enough for bootstrapping JSON files
+    # from the legacy database export.
     for pattern in chip_data['patterns'][:3]:
         if 'G' in pattern:
             parts = pattern.split('G')

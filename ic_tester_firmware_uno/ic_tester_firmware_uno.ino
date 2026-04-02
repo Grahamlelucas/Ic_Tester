@@ -1,5 +1,14 @@
 // IC Tester Firmware - Arduino Uno R3
-// Version 9.0-UNO - Enhanced with timing, stability analysis, and analog voltage measurement
+// Version 9.0-UNO - Enhanced with timing, stability analysis, and analog
+// voltage measurement.
+//
+// Architectural overview:
+// - The Python GUI sends one line-oriented command at a time over serial.
+// - This firmware validates the requested Uno pin, performs the hardware action,
+//   and replies with a compact response line.
+// - Timing-sensitive work remains on the microcontroller so the desktop app does
+//   not have to fight USB serial latency.
+//
 // Adapted for Uno R3: 12 digital pins (2-13), 6 analog pins (A0-A5 = 14-19)
 // No display hardware required. Controlled entirely via serial from Python GUI.
 
@@ -38,7 +47,8 @@ void setup() {
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
 
-  // Boot LED blink
+  // Boot LED blink confirms reset and creates a short, predictable startup
+  // delay before the host expects the READY banner.
   for (int i = 0; i < 3; i++) {
     digitalWrite(LED_PIN, HIGH);
     delay(150);
@@ -46,10 +56,13 @@ void setup() {
     delay(150);
   }
 
+  // `READY` is the host-side handshake anchor used during connection.
   Serial.println("READY");
 }
 
 void loop() {
+  // The serial protocol is line-oriented: read one command, process it fully,
+  // then emit one response line.
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
     command.trim();
@@ -60,6 +73,8 @@ void loop() {
 }
 
 void processCommand(String command) {
+  // Explicit command dispatch keeps the firmware protocol readable and makes it
+  // obvious which feature owns each response format.
   if (command == "PING") {
     Serial.println("PONG");
     return;
@@ -151,6 +166,7 @@ void processCommand(String command) {
 }
 
 void handleSetPin(String command) {
+  // Format: SET_PIN,<pin>,<HIGH|LOW>
   int firstComma = command.indexOf(',');
   int secondComma = command.indexOf(',', firstComma + 1);
   if (secondComma < 0) {
@@ -183,6 +199,7 @@ void handleSetPin(String command) {
 }
 
 void handleReadPin(String command) {
+  // Format: READ_PIN,<pin>
   int comma = command.indexOf(',');
   int pin = command.substring(comma + 1).toInt();
 
@@ -201,6 +218,7 @@ void handleReadPin(String command) {
 }
 
 void handleSetMultiplePins(String command) {
+  // Format: SET_PINS,<pin>:<state>,<pin>:<state>,...
   int startIdx = command.indexOf(',') + 1;
   String pinData = command.substring(startIdx);
   int setCount = 0;

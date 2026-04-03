@@ -257,6 +257,117 @@ class TestGenerator:
         )
         return suite
 
+    def detect_logic_function(self, chip_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Infer a basic combinational logic function from chip metadata.
+
+        Supports the standard gate/inverter chips used by the manual tester
+        game mode. Returns None for unsupported or ambiguous parts.
+        """
+        haystack = " ".join([
+            str(chip_data.get("chipId", "")),
+            str(chip_data.get("name", "")),
+            str(chip_data.get("description", "")),
+        ]).lower()
+
+        checks = [
+            ("XNOR", ["xnor"]),
+            ("XOR", ["xor"]),
+            ("NAND", ["nand"]),
+            ("NOR", [" nor", "nor ", "quad nor", "2-input nor"]),
+            ("BUFFER", ["buffer"]),
+            ("NOT", ["inverter", "not gate", "hex inverter", "inverting"]),
+            ("AND", [" and", "and ", "quad and", "2-input and"]),
+            ("OR", [" or", "or ", "quad or", "2-input or"]),
+        ]
+
+        for logic_name, patterns in checks:
+            if any(pattern in haystack for pattern in patterns):
+                return logic_name
+        return None
+
+    def infer_gate_groups(
+        self, chip_data: Dict[str, Any]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Infer gate groupings from a chip definition's pin names.
+
+        Expected naming convention:
+        - 2-input gates: `1A`, `1B` -> `1Y`
+        - 1-input gates: `1A` -> `1Y`
+        """
+        pinout = chip_data.get("pinout", {})
+        inputs = pinout.get("inputs", [])
+        outputs = pinout.get("outputs", [])
+        groups: List[Dict[str, Any]] = []
+
+        for out in outputs:
+            out_name = str(out.get("name", ""))
+            if not out_name.endswith("Y") or len(out_name) < 2:
+                return None
+
+            prefix = out_name[:-1]
+            matching_inputs = [
+                inp for inp in inputs
+                if str(inp.get("name", "")).startswith(prefix)
+            ]
+            if len(matching_inputs) not in (1, 2):
+                return None
+
+            matching_inputs.sort(key=lambda item: str(item.get("name", "")))
+            groups.append({
+                "prefix": prefix,
+                "inputs": [str(inp["name"]) for inp in matching_inputs],
+                "output": out_name,
+            })
+
+        groups.sort(key=lambda item: item["prefix"])
+        return groups if groups else None
+
+    def generate_suite_from_chip(
+        self, chip_data: Dict[str, Any]
+    ) -> Optional[GeneratedTestSuite]:
+        """
+        Generate a combinational test suite directly from a chip definition.
+
+        This is used by the manual tester game mode to create round data from
+        the chip's structure rather than its stored automated test sequence.
+        """
+        logic_function = self.detect_logic_function(chip_data)
+        groups = self.infer_gate_groups(chip_data)
+        if logic_function is None or groups is None:
+            return None
+
+        valid_input_counts = {len(group["inputs"]) for group in groups}
+        if valid_input_counts == {1} and logic_function not in ("NOT", "BUFFER"):
+            return None
+        if valid_input_counts == {2} and logic_function not in (
+            "AND", "OR", "NAND", "NOR", "XOR", "XNOR"
+        ):
+            return None
+        if len(valid_input_counts) != 1:
+            return None
+
+        suite = GeneratedTestSuite(
+            chip_id=str(chip_data.get("chipId", "UNKNOWN")),
+            logic_type="combinational",
+            gate_function=logic_function,
+            num_gates=len(groups),
+            notes="Generated directly from chip pin groups",
+        )
+
+        for gate_idx, group in enumerate(groups, 1):
+            suite.vectors.extend(
+                self.generate_truth_table(
+                    gate_function=logic_function,
+                    input_names=group["inputs"],
+                    output_name=group["output"],
+                    gate_index=gate_idx,
+                )
+            )
+
+        return suite
+
     # ------------------------------------------------------------------
     # Sequential logic support
     # ------------------------------------------------------------------

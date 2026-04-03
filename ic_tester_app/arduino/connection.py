@@ -24,6 +24,7 @@ import serial.tools.list_ports
 
 from ..config import Config
 from ..logger import get_logger
+from .commands import ArduinoCommands
 
 logger = get_logger("arduino.connection")
 
@@ -47,6 +48,8 @@ class ArduinoConnection:
         # Firmware can emit out-of-band `EVT,...` lines while a test is running.
         # We queue them here so command/response reads stay deterministic.
         self._event_queue: List[str] = []
+        # Board-aware command helper is created after a successful handshake.
+        self.commands: Optional[ArduinoCommands] = None
         
         logger.info("ArduinoConnection initialized")
     
@@ -141,6 +144,7 @@ class ArduinoConnection:
                     logger.debug(f"Received during handshake: {line}")
                     if line == "READY" or line == "PONG":
                         self._connected = True
+                        self._init_commands()
                         logger.info(f"Connected to Arduino on {port} (handshake: {line})")
                         return True
                 time.sleep(0.05)
@@ -160,6 +164,7 @@ class ArduinoConnection:
                                 logger.debug(f"PING response attempt {attempt+1}: {line}")
                             if line == "PONG" or line == "READY":
                                 self._connected = True
+                                self._init_commands()
                                 logger.info(f"Connected to Arduino on {port} (PING retry)")
                                 return True
                         time.sleep(0.03)
@@ -171,13 +176,16 @@ class ArduinoConnection:
             self._serial.close()
             self._serial = None
             self._port = None
+            self.commands = None
             return False
             
         except serial.SerialException as e:
             logger.error(f"Serial error connecting to {port}: {e}")
+            self.commands = None
             return False
         except Exception as e:
             logger.error(f"Unexpected error connecting to {port}: {e}")
+            self.commands = None
             return False
     
     def disconnect(self):
@@ -194,6 +202,15 @@ class ArduinoConnection:
         
         self._connected = False
         self._event_queue.clear()
+        self.commands = None
+
+    def _init_commands(self):
+        """Create the board-aware command helper after a successful connect."""
+        try:
+            self.commands = ArduinoCommands(self)
+        except Exception as e:
+            logger.warning(f"Failed to initialize ArduinoCommands helper: {e}")
+            self.commands = None
     
     def send_command(self, command: str) -> bool:
         """

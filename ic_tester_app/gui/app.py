@@ -27,6 +27,7 @@ from typing import Dict, Optional
 
 from .theme import Theme, get_fonts
 from .widgets import ModernButton, HelpDialog
+from .manual_tester import ManualTesterController, ManualTesterWindow
 from .panels import (ConnectionPanel, ChipPanel, PinMappingPanel, StatusPanel, OutputPanel,
                      PinVisualizer, DashboardPanel)
 
@@ -110,11 +111,15 @@ class ICTesterApp:
         self.test_generator = TestGenerator()
         self.benchmark = PerformanceBenchmark(self.arduino)
         self.analog_analyzer = AnalogAnalyzer(self.arduino)
+        self.manual_tester_controller = ManualTesterController(
+            self.arduino, self.chip_db, self.test_generator, self.knowledge
+        )
         
         # Cross-panel runtime state used to coordinate asynchronous work.
         self.is_testing = False
         self._previous_chip_id = None
         self._previous_chip_mapping = None
+        self.manual_tester_window: Optional[ManualTesterWindow] = None
         self.counter_running = False
         self.last_result = None
         self.test_start_time = None
@@ -422,6 +427,15 @@ class ICTesterApp:
         # Right side - Help and version
         right = tk.Frame(header, bg=Theme.BG_DARK)
         right.pack(side=tk.RIGHT)
+
+        ModernButton(
+            right,
+            "Manual Tester",
+            self._open_manual_tester,
+            width=128,
+            height=32,
+            bg_color=Theme.ACCENT_PRIMARY,
+        ).pack(side=tk.LEFT, padx=(0, 10))
         
         ModernButton(right, "? Help", self._show_help,
                     width=80, height=32, bg_color=Theme.ACCENT_INFO).pack(side=tk.LEFT, padx=(0, 10))
@@ -1417,6 +1431,48 @@ class ICTesterApp:
             self._log(f"\n❌ {message}", "error")
             self.status_panel.set_failed()
             self.status_panel.set_custom_text("Unknown chip", Theme.ACCENT_ERROR)
+
+    def _get_manual_tester_context(self) -> Dict[str, Optional[Dict]]:
+        """
+        Snapshot the live chip selection and validated mapping for the add-on window.
+
+        The manual tester reads from the same selected chip and mapping used by
+        the automated workflow so there is one canonical wiring context.
+        """
+        chip_id = self.chip_panel.get_selected_chip()
+        board = self.chip_panel.get_board()
+        chip_data = self.chip_db.get_chip(chip_id, board=board) if chip_id else None
+        mapping = self.pin_mapping_panel.get_mapping() if chip_data else None
+        return {
+            "chip_id": chip_id,
+            "chip_data": chip_data,
+            "board": board,
+            "mapping": mapping,
+            "connected": self.arduino.connected and self.arduino.commands is not None,
+        }
+
+    def _on_manual_tester_closed(self):
+        """Release the window reference after the add-on closes."""
+        self.manual_tester_window = None
+
+    def _open_manual_tester(self):
+        """Open or focus the separate manual tester window."""
+        if self.manual_tester_window is not None:
+            try:
+                if self.manual_tester_window.window.winfo_exists():
+                    self.manual_tester_window.focus()
+                    return
+            except Exception:
+                self.manual_tester_window = None
+
+        self.manual_tester_window = ManualTesterWindow(
+            parent=self.root,
+            controller=self.manual_tester_controller,
+            get_current_context=self._get_manual_tester_context,
+            is_main_app_busy=lambda: self.is_testing or self.counter_running,
+            on_close=self._on_manual_tester_closed,
+        )
+
     def _show_help(self):
         """Open help dialog"""
         HelpDialog(self.root)

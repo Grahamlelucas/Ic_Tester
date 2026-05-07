@@ -1,0 +1,1554 @@
+<!-- ic_tester_app/web_ui/templates/index.html -->
+<!-- Last edited: 2026-04-14 -->
+<!-- Purpose: Main application interface — full feature parity with tkinter GUI -->
+
+{% extends "base.html" %}
+
+{% block extra_css %}
+/* ── Chip Visualizer SVG ─────────────────────────── */
+.chip-svg { background: var(--bg-dark); border-radius:8px; transition: transform .6s cubic-bezier(.22,1,.36,1); transform-origin: center center; }
+.chip-svg.zoomed { transform: scale(1.35); }
+.chip-body { fill:#2d2d4a; stroke:#6366f1; stroke-width:2; }
+.pin-rect  { stroke:#555; stroke-width:1; cursor:pointer; transition:fill .2s, filter .3s, stroke .3s, stroke-width .3s; }
+.pin-label { font:10px 'JetBrains Mono',monospace; fill:var(--text-secondary); }
+.chip-label{ font:bold 13px 'Inter',sans-serif; fill:var(--text-primary); text-anchor:middle; }
+.notch     { fill:none; stroke:#6366f1; stroke-width:1.5; }
+
+/* ── Pin state animations (command center) ────────── */
+@keyframes pinPulseHigh {
+    0%,100% { filter: drop-shadow(0 0 4px #10b981); }
+    50%     { filter: drop-shadow(0 0 12px #10b981) drop-shadow(0 0 20px #10b98166); }
+}
+@keyframes pinPulseLow {
+    0%,100% { filter: drop-shadow(0 0 2px #64748b); }
+    50%     { filter: drop-shadow(0 0 6px #64748b44); }
+}
+@keyframes failAlarm {
+    0%,100% { filter: drop-shadow(0 0 6px #ef4444); stroke: #ef4444; stroke-width:2.5; }
+    50%     { filter: drop-shadow(0 0 20px #ef4444) drop-shadow(0 0 40px #ef444488); stroke: #ff6b6b; stroke-width:3; }
+}
+@keyframes failFlash {
+    0%,20%,40%,60%,80%,100% { opacity:1; }
+    10%,30%,50%,70%,90%     { opacity:.6; }
+}
+.pin-high   { animation: pinPulseHigh 1.5s ease-in-out infinite; }
+.pin-low    { animation: pinPulseLow 2s ease-in-out infinite; }
+.pin-fail   { animation: failAlarm 1s ease-in-out infinite; fill: #ef4444 !important; }
+.pin-error  { animation: failAlarm .6s ease-in-out infinite; fill: #ef4444 !important; }
+
+/* ── Failure overlay scanline ─────────────────────── */
+@keyframes scanline {
+    0%   { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+}
+.viz-fail-overlay {
+    position: absolute; inset:0; pointer-events:none; border-radius:8px; overflow:hidden;
+    background: linear-gradient(180deg, transparent 48%, #ef444418 50%, transparent 52%);
+    animation: scanline 2s linear infinite;
+}
+
+/* ── Manual control toggle switch ─────────────────── */
+.pin-toggle { display:inline-flex; align-items:center; gap:6px; }
+.pin-toggle-btn {
+    width:54px; height:28px; border-radius:14px; border:2px solid #444; background:#1a1a2e;
+    cursor:pointer; position:relative; transition:all .3s; outline:none;
+}
+.pin-toggle-btn::after {
+    content:''; position:absolute; top:2px; left:2px; width:20px; height:20px;
+    border-radius:50%; background:#64748b; transition:all .3s;
+}
+.pin-toggle-btn.on { border-color:#10b981; background:#10b98122; }
+.pin-toggle-btn.on::after { left:28px; background:#10b981; box-shadow:0 0 8px #10b98188; }
+.pin-toggle-btn.off { border-color:#64748b; }
+.pin-toggle-state {
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; min-width:30px;
+}
+.pin-toggle-state.high { color:#10b981; }
+.pin-toggle-state.low  { color:#64748b; }
+
+/* ── Read-back indicator ──────────────────────────── */
+.read-indicator {
+    display:inline-block; width:12px; height:12px; border-radius:50%;
+    transition: background .3s, box-shadow .3s;
+}
+.read-indicator.high { background:#10b981; box-shadow:0 0 8px #10b98188; }
+.read-indicator.low  { background:#64748b; }
+.read-indicator.err  { background:#ef4444; box-shadow:0 0 8px #ef444488; }
+
+/* ── Confidence gauge ────────────────────────────── */
+.gauge-track{ fill:none; stroke:#333; stroke-width:10; }
+.gauge-fill { fill:none; stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset .8s ease; }
+/* ── Pin health bars ─────────────────────────────── */
+.health-bar-bg{ background:#333; border-radius:4px; height:10px; }
+.health-bar-fg{ border-radius:4px; height:10px; transition:width .5s; }
+/* ── Counter badge ───────────────────────────────── */
+.counter-badge{ font-family:'JetBrains Mono',monospace; font-size:1.5rem; color:var(--accent-warning); }
+/* ── Manual control panel ─────────────────────────── */
+.manual-control-panel { max-height:calc(100vh - 200px); overflow-y:auto; }
+.manual-pin-row { display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #ffffff0a; }
+.manual-pin-row:last-child { border-bottom:none; }
+.manual-pin-name { font-size:11px; font-family:'JetBrains Mono',monospace; min-width:60px; color:var(--text-secondary); }
+.manual-pin-num  { font-size:10px; color:var(--text-muted); min-width:24px; }
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+        <div class="col-md-3 col-lg-2 sidebar p-3">
+
+            <!-- Connection Card -->
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-usb me-2"></i>Connection</div>
+                <div class="card-body">
+                    <button id="scanBtn" class="btn btn-outline-info btn-sm w-100 mb-2">
+                        <i class="bi bi-search me-1"></i>Scan Ports
+                    </button>
+                    <select id="portSelect" class="form-select form-select-sm mb-2">
+                        <option value="">Select port...</option>
+                    </select>
+                    <div id="boardInfo" class="d-none small text-muted mb-2">
+                        <i class="bi bi-motherboard me-1"></i><span id="boardType"></span><br>
+                        <i class="bi bi-pin-angle me-1"></i><span id="pinInfo"></span>
+                    </div>
+                    <button id="connectBtn" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-plug me-1"></i>Connect
+                    </button>
+                    <button id="disconnectBtn" class="btn btn-danger btn-sm w-100 d-none">
+                        <i class="bi bi-plug-fill me-1"></i>Disconnect
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chip Selection Card -->
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-cpu me-2"></i>Chip Selection</div>
+                <div class="card-body">
+                    <select id="chipSelect" class="form-select form-select-sm mb-2">
+                        <option value="">Select chip...</option>
+                    </select>
+                    <div id="chipInfo" class="small text-muted mb-2"></div>
+                    <div id="chipDesc" class="small text-muted mb-2" style="max-height:60px;overflow-y:auto;"></div>
+
+                    <button id="runTestBtn" class="btn btn-success btn-sm w-100 mb-1" disabled>
+                        <i class="bi bi-play-fill me-1"></i>Run Test
+                    </button>
+                    <button id="counterBtn" class="btn btn-outline-warning btn-sm w-100 mb-1 d-none">
+                        <i class="bi bi-arrow-repeat me-1"></i>Run Counter
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger btn-sm w-100 d-none">
+                        <i class="bi bi-stop-fill me-1"></i>Stop
+                    </button>
+                    <div id="counterDisplay" class="counter-badge text-center d-none">0</div>
+                </div>
+            </div>
+
+            <!-- Status Card -->
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-check-circle me-2"></i>Test Result</div>
+                <div class="card-body text-center">
+                    <div id="testStatus" class="mb-2">
+                        <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="none" stroke="#64748b" stroke-width="3" stroke-dasharray="5,3"/><text x="45" y="58" text-anchor="middle" font-size="36" font-weight="bold" fill="#64748b">?</text></svg>
+                    </div>
+                    <div id="statusText" class="text-muted">Ready to test</div>
+                    <div id="confidenceText" class="small text-muted mt-1 d-none"></div>
+                    <div class="row mt-3">
+                        <div class="col-4"><div class="stat-number text-success" id="passedCount">0</div><div class="stat-label">Passed</div></div>
+                        <div class="col-4"><div class="stat-number text-danger" id="failedCount">0</div><div class="stat-label">Failed</div></div>
+                        <div class="col-4"><div class="stat-number text-white" id="totalCount">0</div><div class="stat-label">Total</div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Diagnostics Card -->
+            <div class="card">
+                <div class="card-header"><i class="bi bi-activity me-2"></i>Advanced</div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-6"><button class="btn btn-outline-info btn-sm w-100" onclick="runDiagnostic('statistical')">Statistical</button></div>
+                        <div class="col-6"><button class="btn btn-outline-info btn-sm w-100" onclick="runDiagnostic('signals')">Signals</button></div>
+                        <div class="col-6"><button class="btn btn-outline-info btn-sm w-100" onclick="runDiagnostic('fingerprint')">Fingerprint</button></div>
+                        <div class="col-6"><button class="btn btn-outline-info btn-sm w-100" onclick="runDiagnostic('benchmark')">Benchmark</button></div>
+                        <div class="col-12"><button class="btn btn-outline-primary btn-sm w-100" onclick="runDiagnostic('analog')"><i class="bi bi-battery-half me-1"></i>Analog Voltage</button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+        <div class="col-md-9 col-lg-10 main-content">
+
+            <!-- Tabs -->
+            <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+                <li class="nav-item"><button class="nav-link active" id="pin-mapping-tab" data-bs-toggle="tab" data-bs-target="#pin-mapping" type="button"><i class="bi bi-pin-map me-1"></i>Pin Mapping</button></li>
+                <li class="nav-item"><button class="nav-link" id="output-tab" data-bs-toggle="tab" data-bs-target="#output" type="button"><i class="bi bi-terminal me-1"></i>Output Log</button></li>
+                <li class="nav-item"><button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual-control" type="button"><i class="bi bi-joystick me-1"></i>Manual Control</button></li>
+                <li class="nav-item"><button class="nav-link" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button"><i class="bi bi-graph-up me-1"></i>Dashboard</button></li>
+                <li class="nav-item ms-auto"><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal"><i class="bi bi-question-circle me-1"></i>Help</button></li>
+            </ul>
+
+            <div class="tab-content" id="mainTabContent">
+
+                <!-- ── Pin Mapping Tab ── -->
+                <div class="tab-pane fade show active" id="pin-mapping" role="tabpanel">
+                    <div class="row">
+                        <!-- Left: mapping table -->
+                        <div class="col-lg-7">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span><i class="bi bi-pin-map me-2"></i>Pin Mapping</span>
+                                    <div>
+                                        <button class="btn btn-outline-light btn-sm" onclick="clearPinMapping()"><i class="bi bi-x-circle me-1"></i>Clear</button>
+                                        <button class="btn btn-outline-success btn-sm ms-1" onclick="validatePinMapping()"><i class="bi bi-check-circle me-1"></i>Validate</button>
+                                        <button class="btn btn-primary btn-sm ms-1" onclick="savePinMapping()"><i class="bi bi-save me-1"></i>Save</button>
+                                        <button class="btn btn-outline-info btn-sm ms-1" onclick="loadPinMapping()"><i class="bi bi-folder-open me-1"></i>Load</button>
+                                    </div>
+                                </div>
+                                <div class="card-body" style="max-height:calc(100vh - 200px);overflow-y:auto;">
+                                    <div id="hwRequirements" class="alert alert-info d-none small mb-3"></div>
+                                    <div id="pinMappingTable"><p class="text-muted">Select a chip to configure pin mapping</p></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Right: chip visualizer -->
+                        <div class="col-lg-5">
+                            <div class="card">
+                                <div class="card-header"><i class="bi bi-cpu me-2"></i>Chip Layout</div>
+                                <div class="card-body text-center" id="chipVisualizerContainer">
+                                    <p class="text-muted">Select a chip to see layout</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Output Log Tab ── -->
+                <div class="tab-pane fade" id="output" role="tabpanel">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-terminal me-2"></i>Output Log</span>
+                            <div>
+                                <button class="btn btn-outline-info btn-sm" onclick="copyLog()"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                                <button class="btn btn-outline-light btn-sm ms-2" onclick="clearLog()"><i class="bi bi-trash me-1"></i>Clear</button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="logContainer" class="log-container p-3" style="max-height:calc(100vh - 200px);">
+                                <div class="text-muted">Ready to test...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Manual Control Tab ── -->
+                <div class="tab-pane fade" id="manual-control" role="tabpanel">
+                    <div class="row">
+                        <!-- Left: pin control toggles -->
+                        <div class="col-lg-5">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span><i class="bi bi-joystick me-2"></i>Pin Control</span>
+                                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                                        <button class="btn btn-outline-success btn-sm" onclick="readAllOutputs()" title="Read all output pins">
+                                            <i class="bi bi-broadcast me-1"></i>Read Outputs
+                                        </button>
+                                        <button class="btn btn-outline-warning btn-sm" onclick="resetAllPins()" title="Set all inputs LOW">
+                                            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset All
+                                        </button>
+                                        <div class="input-group input-group-sm ms-1" style="width:140px" title="Clock counter to this decimal value (0-9)">
+                                            <input type="number" id="counterTargetInput" class="form-control form-control-sm" min="0" max="9" placeholder="0-9" style="width:55px">
+                                            <button class="btn btn-outline-info btn-sm" onclick="clockToCount()">
+                                                <i class="bi bi-skip-forward-fill me-1"></i>Count
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-body manual-control-panel">
+                                    <div id="manualControlList">
+                                        <p class="text-muted">Select a chip and configure pin mapping first</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Right: live chip visualizer -->
+                        <div class="col-lg-7">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span><i class="bi bi-cpu me-2"></i>Live Chip View</span>
+                                    <span id="vizModeLabel" class="badge bg-secondary">IDLE</span>
+                                </div>
+                                <div class="card-body text-center position-relative" id="manualVizContainer">
+                                    <p class="text-muted">Select a chip to see live pin states</p>
+                                </div>
+                            </div>
+                            <!-- Failure detail panel (hidden until failure) -->
+                            <div class="card mt-3 d-none" id="failureDetailCard">
+                                <div class="card-header bg-danger bg-opacity-25">
+                                    <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i>
+                                    <span class="text-danger fw-bold">Failure Analysis</span>
+                                </div>
+                                <div class="card-body" id="failureDetailBody"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Dashboard Tab ── -->
+                <div class="tab-pane fade" id="dashboard" role="tabpanel">
+                    <div id="dashboardContent">
+                        <div class="text-center text-muted py-5"><i class="bi bi-clipboard-data fs-1 d-block mb-3"></i>Run a test to see diagnostics</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════ HELP MODAL ═══════════════════ -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="background:var(--bg-card);">
+            <div class="modal-header border-0">
+                <h5 class="modal-title"><i class="bi bi-book me-2"></i>Help &amp; Documentation</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-pills mb-3" id="helpTabs">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#helpStart">Getting Started</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#helpChips">Chip Learning</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#helpAdding">Adding Chips</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#helpTrouble">Troubleshooting</button></li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="helpStart">
+                        <h5 class="text-info">Getting Started with IC Tester Pro</h5>
+                        <p>Welcome! This application tests 74-series ICs using an Arduino Mega 2560.</p>
+                        <h6 class="text-info mt-3">Step 1: Connect Your Arduino</h6>
+                        <ol><li>Plug Arduino Mega into USB</li><li>Upload the IC Tester sketch via Arduino IDE</li><li>Close Arduino IDE (it blocks the port)</li><li>Click <kbd>Scan</kbd> then <kbd>Connect</kbd></li></ol>
+                        <h6 class="text-info mt-3">Step 2: Configure Pin Mapping</h6>
+                        <ol><li>Select chip from dropdown</li><li>Enter Arduino pin for each chip pin in the Pin Mapping tab</li><li>VCC/GND are auto-marked as PWR</li><li>Click Validate, then optionally Save</li></ol>
+                        <h6 class="text-info mt-3">Step 3: Run the Test</h6>
+                        <ol><li>Click <kbd>Run Test</kbd></li><li>Green = passed, Red = failed</li><li>Check Output Log and Dashboard for details</li></ol>
+                    </div>
+                    <div class="tab-pane fade" id="helpChips">
+                        <h5 class="text-info">Learning About 74-Series Chips</h5>
+                        <h6 class="text-info mt-3">Chip Families</h6>
+                        <ul><li><strong>Logic Gates</strong> (7400, 7404, 7408, 7432)</li><li><strong>Flip-Flops</strong> (7474, 7475)</li><li><strong>Counters</strong> (7490, 7493)</li><li><strong>Decoders</strong> (74138, 74139)</li><li><strong>Shift Registers</strong> (74595)</li></ul>
+                        <h6 class="text-info mt-3">Recommended Learning Path</h6>
+                        <ol><li><code>7404</code> Inverter — simplest chip</li><li><code>7400</code> NAND Gate — universal gate</li><li><code>7408</code> AND, <code>7432</code> OR</li><li><code>7474</code> D Flip-Flop</li><li><code>7490</code>/<code>7493</code> Counters</li></ol>
+                        <h6 class="text-info mt-3">Key Concepts</h6>
+                        <ul><li><strong>Truth Tables</strong> — all input/output combos</li><li><strong>Edge Triggering</strong> — responds to transitions</li><li><strong>Active Low</strong> — signal 'on' when LOW</li><li><strong>Floating Inputs</strong> — unconnected = problems</li></ul>
+                    </div>
+                    <div class="tab-pane fade" id="helpAdding">
+                        <h5 class="text-info">Adding New Chip Definitions</h5>
+                        <p>Chip definitions are JSON files in the <code>chips/</code> folder.</p>
+                        <h6 class="text-info mt-3">Required Fields</h6>
+                        <ul><li><code>chipId</code> — part number</li><li><code>name</code> — human name</li><li><code>pinout</code> — inputs, outputs, VCC, GND</li><li><code>arduinoMapping</code> — default pin mapping</li><li><code>testSequence</code> — the tests to run</li></ul>
+                        <pre class="bg-dark p-3 rounded small"><code>{
+  "chipId": "7400",
+  "name": "Quad 2-Input NAND",
+  "pinout": {
+    "vcc": 14, "gnd": 7,
+    "inputs": [{"pin": 1, "name": "1A"}],
+    "outputs": [{"pin": 3, "name": "1Y"}]
+  },
+  "testSequence": {"tests": [...]}
+}</code></pre>
+                    </div>
+                    <div class="tab-pane fade" id="helpTrouble">
+                        <h5 class="text-info">Troubleshooting</h5>
+                        <h6 class="text-info mt-3">Arduino Not Found</h6>
+                        <ul><li>Check USB cable</li><li>Close Arduino IDE</li><li>Click Scan to refresh</li></ul>
+                        <h6 class="text-info mt-3">All Tests Failing</h6>
+                        <ul><li>Double-check wiring</li><li>Verify VCC (5V) and GND</li><li>Check chip orientation</li><li>Try a known-good chip</li></ul>
+                        <h6 class="text-info mt-3">Inconsistent Results</h6>
+                        <ul><li>Check for loose wires</li><li>Add decoupling capacitors</li><li>Avoid long wire runs</li></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+/* ═══════════════════ APPLICATION STATE ═══════════════════ */
+let selectedChip = null;
+let chipData = null;
+let chipList = [];
+let pinMapping = {};
+let availablePorts = [];
+let lastTestData = null;
+
+/* ═══════════════════ LOCAL STORAGE HELPERS ═══════════════════ */
+function saveState(key, value) {
+    try { localStorage.setItem('ict_' + key, JSON.stringify(value)); } catch(e) {}
+}
+function loadState(key, fallback) {
+    try {
+        const v = localStorage.getItem('ict_' + key);
+        return v !== null ? JSON.parse(v) : fallback;
+    } catch(e) { return fallback; }
+}
+
+/* ═══════════════════ INIT ═══════════════════ */
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore pin mapping from localStorage (unsaved edits survive refresh)
+    pinMapping = loadState('pinMapping', {});
+    loadChips();
+    setupEventListeners();
+
+    // Restore active tab
+    const savedTab = loadState('activeTab', null);
+    if (savedTab) {
+        const tabBtn = document.querySelector(`[data-bs-target="${savedTab}"]`);
+        if (tabBtn) new bootstrap.Tab(tabBtn).show();
+    }
+    // Persist tab changes
+    document.querySelectorAll('#mainTabs button[data-bs-toggle="tab"]').forEach(btn => {
+        btn.addEventListener('shown.bs.tab', e => saveState('activeTab', e.target.dataset.bsTarget));
+    });
+});
+
+/* ═══════════════════ EVENT LISTENERS ═══════════════════ */
+function setupEventListeners() {
+    document.getElementById('scanBtn').addEventListener('click', function() {
+        socket.emit('scan_ports');
+        this.disabled = true;
+        setTimeout(() => this.disabled = false, 1500);
+    });
+
+    document.getElementById('connectBtn').addEventListener('click', function() {
+        const port = document.getElementById('portSelect').value;
+        if (!port) { showToast('Select a port first', 'warning'); return; }
+        socket.emit('connect_arduino', { port });
+        this.disabled = true;
+        this.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Connecting...';
+    });
+
+    document.getElementById('disconnectBtn').addEventListener('click', () => socket.emit('disconnect_arduino'));
+
+    document.getElementById('chipSelect').addEventListener('change', function() {
+        const prevChip = selectedChip;
+        selectedChip = this.value;
+        saveState('selectedChip', selectedChip);
+        if (selectedChip) loadChipDetails(selectedChip, prevChip);
+        else resetChipUI();
+        updateButtonStates();
+    });
+
+    document.getElementById('runTestBtn').addEventListener('click', function() {
+        if (!selectedChip) { showToast('Select a chip first', 'warning'); return; }
+        if (!isConnected) { showToast('Connect Arduino first', 'warning'); return; }
+        socket.emit('run_test', { chip_id: selectedChip, pin_mapping: pinMapping });
+    });
+
+    document.getElementById('counterBtn').addEventListener('click', function() {
+        if (!isConnected) { showToast('Connect Arduino first', 'warning'); return; }
+        socket.emit('start_counter', { chip_id: selectedChip, pin_mapping: pinMapping });
+        this.classList.add('d-none');
+        document.getElementById('stopBtn').classList.remove('d-none');
+        document.getElementById('counterDisplay').classList.remove('d-none');
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', function() {
+        socket.emit('abort_test');
+        socket.emit('stop_counter');
+        this.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Stopping...';
+        this.disabled = true;
+        addLogEntry('⏹ Stop requested...', 'warning');
+    });
+}
+
+/* ═══════════════════ CHIP LOADING ═══════════════════ */
+function loadChips() {
+    fetch('/api/chips').then(r => r.json()).then(data => {
+        chipList = data.chips;
+        const sel = document.getElementById('chipSelect');
+        sel.innerHTML = '<option value="">Select chip...</option>';
+        chipList.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = `${c.id} - ${c.name}`;
+            sel.appendChild(opt);
+        });
+
+        // Restore previously selected chip from localStorage
+        const savedChip = loadState('selectedChip', null);
+        if (savedChip && chipList.find(c => c.id === savedChip)) {
+            sel.value = savedChip;
+            selectedChip = savedChip;
+            loadChipDetails(savedChip, null);
+            updateButtonStates();
+        }
+    }).catch(() => showToast('Failed to load chip database', 'error'));
+}
+
+function loadChipDetails(chipId, prevChipId) {
+    fetch(`/api/chip/${chipId}`).then(r => r.json()).then(chip => {
+        chipData = chip;
+        const meta = chipList.find(c => c.id === chipId);
+
+        document.getElementById('chipInfo').textContent = chip.name || chipId;
+        document.getElementById('chipDesc').textContent = chip.description || '';
+
+        // Counter button visibility
+        const counterBtn = document.getElementById('counterBtn');
+        if (meta && meta.is_counter) counterBtn.classList.remove('d-none');
+        else counterBtn.classList.add('d-none');
+
+        // If user just switched chips (not a page-restore), reset mapping
+        const restoredChip = loadState('selectedChip', null);
+        const hasLocalMapping = Object.keys(pinMapping).length > 0 && restoredChip === chipId;
+        if (!hasLocalMapping) pinMapping = {};
+
+        buildPinMappingTable(chip);
+        drawChipVisualizer(chip);
+
+        // Auto-load saved mapping from server (overrides localStorage cache)
+        fetch(`/api/pin_mapping/${chipId}`).then(r => r.json()).then(saved => {
+            if (saved.found && saved.data && saved.data.mappings) {
+                pinMapping = stripPwrEntries(saved.data.mappings);
+                saveState('pinMapping', pinMapping);
+                buildPinMappingTable(chip);
+                updateChipVisualizerPins();
+                addLogEntry(`Loaded saved pin mapping for ${chipId}`, 'info');
+            } else if (hasLocalMapping) {
+                buildPinMappingTable(chip);
+                updateChipVisualizerPins();
+                addLogEntry('Restored unsaved pin mapping from previous session', 'info');
+            }
+            // Rebuild manual controls with fresh chip+mapping data
+            if (typeof buildManualControls === 'function') buildManualControls();
+        }).catch(() => {});
+
+        // Migration suggestion
+        if (prevChipId && prevChipId !== chipId) {
+            checkMigration(prevChipId, chipId);
+        }
+    }).catch(() => showToast('Failed to load chip details', 'error'));
+}
+
+function resetChipUI() {
+    chipData = null;
+    pinMapping = {};
+    saveState('pinMapping', pinMapping);
+    document.getElementById('chipInfo').textContent = '';
+    document.getElementById('chipDesc').textContent = '';
+    document.getElementById('pinMappingTable').innerHTML = '<p class="text-muted">Select a chip to configure pin mapping</p>';
+    document.getElementById('chipVisualizerContainer').innerHTML = '<p class="text-muted">Select a chip to see layout</p>';
+    document.getElementById('counterBtn').classList.add('d-none');
+    document.getElementById('hwRequirements').classList.add('d-none');
+}
+
+function updateButtonStates() {
+    const canRun = selectedChip && isConnected && !isTesting;
+    document.getElementById('runTestBtn').disabled = !canRun;
+    // Ensure Run Test is visible and Stop is hidden when not testing
+    if (!isTesting) {
+        document.getElementById('runTestBtn').classList.remove('d-none');
+        document.getElementById('stopBtn').classList.add('d-none');
+    }
+}
+
+/* ═══════════════════ PIN MAPPING TABLE ═══════════════════ */
+function buildPinMappingTable(chip) {
+    const pinout = chip.pinout || {};
+    const vccPin = pinout.vcc;
+    const gndPin = pinout.gnd;
+    const seen = new Set();
+    const allPins = [];
+
+    // Collect pins from inputs/outputs arrays
+    (pinout.inputs || []).forEach(p => {
+        if (!seen.has(p.pin)) { allPins.push({ num: p.pin, name: p.name, type: 'INPUT' }); seen.add(p.pin); }
+    });
+    (pinout.outputs || []).forEach(p => {
+        if (!seen.has(p.pin)) { allPins.push({ num: p.pin, name: p.name, type: 'OUTPUT' }); seen.add(p.pin); }
+    });
+    // Also gather any top-level numeric keys (some chip definitions store pins this way)
+    for (const key of Object.keys(pinout)) {
+        if (['vcc','gnd','description','inputs','outputs','noConnect'].includes(key)) continue;
+        const n = parseInt(key);
+        if (!isNaN(n) && !seen.has(n)) {
+            allPins.push({ num: n, name: String(pinout[key]), type: 'IO' });
+            seen.add(n);
+        }
+    }
+    // No-Connect pins
+    (pinout.noConnect || []).forEach(n => {
+        if (!seen.has(n)) { allPins.push({ num: n, name: 'NC', type: 'NC' }); seen.add(n); }
+    });
+    // VCC / GND
+    if (vccPin && !seen.has(vccPin)) { allPins.push({ num: vccPin, name: 'VCC', type: 'PWR' }); seen.add(vccPin); }
+    if (gndPin && !seen.has(gndPin)) { allPins.push({ num: gndPin, name: 'GND', type: 'PWR' }); seen.add(gndPin); }
+    allPins.sort((a, b) => a.num - b.num);
+
+    // Hardware requirements info (structured + VCC/GND)
+    const hwReq = document.getElementById('hwRequirements');
+    const reqLines = [];
+    if (vccPin) reqLines.push(`Pin ${vccPin} (VCC) → Arduino 5V`);
+    if (gndPin) reqLines.push(`Pin ${gndPin} (GND) → Arduino GND`);
+    // Parse structured hardwareRequirements from chip definition
+    (chip.hardwareRequirements || []).forEach(r => {
+        if (typeof r === 'string') { reqLines.push(r); return; }
+        if (r.description) { reqLines.push(r.description); return; }
+        const tp = (r.type || '').toLowerCase();
+        const sig = r.signal ? ` (${r.signal})` : '';
+        const res = r.resistor ? ` using ${r.resistor}` : '';
+        const tgt = r.target ? ` to ${r.target}` : '';
+        if (tp === 'pullup' && r.pin) reqLines.push(`Add pull-up resistor${res} from pin ${r.pin}${sig}${tgt}`);
+        else if (tp === 'pulldown' && r.pin) reqLines.push(`Add pull-down resistor${res} from pin ${r.pin}${sig}${tgt}`);
+    });
+    if (reqLines.length) {
+        hwReq.innerHTML = `<strong>Hardware Requirements:</strong><br>` + reqLines.map(l => `• ${l}`).join('<br>');
+        hwReq.classList.remove('d-none');
+    } else {
+        hwReq.classList.add('d-none');
+    }
+
+    const RESERVED = {0:'Serial RX', 1:'Serial TX', 50:'SPI MISO', 51:'SPI MOSI', 52:'SPI SCK', 53:'SPI SS'};
+
+    let html = `<table class="table table-dark table-hover table-sm"><thead><tr>
+        <th>Pin #</th><th>Name</th><th>Type</th><th>Arduino Pin</th><th></th></tr></thead><tbody>`;
+
+    allPins.forEach(p => {
+        const isPwr = p.type === 'PWR';
+        const isNC = p.type === 'NC';
+        // Filter out PWR entries when loading saved mappings
+        const rawVal = pinMapping[String(p.num)] || '';
+        const val = (rawVal === 'PWR') ? '' : rawVal;
+        const badge = p.type === 'INPUT' ? 'bg-info' : p.type === 'OUTPUT' ? 'bg-warning' : p.type === 'PWR' ? 'bg-secondary' : p.type === 'NC' ? 'bg-dark text-muted' : 'bg-dark';
+        const rowClass = isNC ? ' class="opacity-50"' : '';
+        html += `<tr${rowClass}>
+            <td>${p.num}</td>
+            <td>${p.name}${isNC ? ' <small class="text-muted">(No Connect)</small>' : ''}</td>
+            <td><span class="badge ${badge}">${p.type}</span></td>
+            <td>${isPwr ? '<span class="text-muted">PWR</span>' :
+                isNC ? '<span class="text-muted fst-italic">—</span>' :
+                `<input type="text" class="form-control form-control-sm pin-input" value="${val}"
+                    placeholder="-" data-pin="${p.num}"
+                    onchange="updatePinMapping('${p.num}', this.value)">`}
+            </td>
+            <td id="pinStatus_${p.num}"></td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('pinMappingTable').innerHTML = html;
+}
+
+function updatePinMapping(chipPin, value) {
+    const v = value.trim();
+    if (v === '') {
+        delete pinMapping[String(chipPin)];
+    } else {
+        let parsed = v.toUpperCase();
+        if (parsed.startsWith('A')) {
+            const n = parseInt(parsed.substring(1));
+            if (!isNaN(n)) parsed = String(54 + n);
+            else parsed = v;
+        } else {
+            const n = parseInt(v);
+            parsed = isNaN(n) ? v : String(n);
+        }
+        pinMapping[String(chipPin)] = parsed;
+    }
+    saveState('pinMapping', pinMapping);
+    updateChipVisualizerPins();
+}
+
+/* ═══════════════════ PIN MAPPING ACTIONS ═══════════════════ */
+function clearPinMapping() {
+    pinMapping = {};
+    saveState('pinMapping', pinMapping);
+    if (chipData) { buildPinMappingTable(chipData); updateChipVisualizerPins(); }
+    showToast('Pin mapping cleared', 'info');
+}
+
+function validatePinMapping() {
+    const used = {};
+    const errors = [];
+    const warnings = [];
+    const RESERVED = {0:'Serial RX', 1:'Serial TX', 50:'SPI MISO', 51:'SPI MOSI', 52:'SPI SCK', 53:'SPI SS'};
+
+    // Build sets of IO and NC pin numbers for this chip
+    const ioPins = new Set();
+    const ncPins = new Set();
+    if (chipData && chipData.pinout) {
+        const po = chipData.pinout;
+        (po.inputs||[]).forEach(p => ioPins.add(String(p.pin)));
+        (po.outputs||[]).forEach(p => ioPins.add(String(p.pin)));
+        (po.noConnect||[]).forEach(n => ncPins.add(String(n)));
+    }
+
+    for (const [cp, ap] of Object.entries(pinMapping)) {
+        // Warn if an NC pin is accidentally mapped
+        if (ncPins.has(cp)) {
+            warnings.push(`Pin ${cp} is No Connect — mapping to Arduino ${ap} is unnecessary`);
+            continue;
+        }
+        const n = parseInt(ap);
+        if (isNaN(n)) { errors.push(`Pin ${cp}: invalid value "${ap}"`); continue; }
+        if (n < 0 || n > 69) errors.push(`Pin ${cp}: Arduino pin ${n} out of range (0-69)`);
+        if (RESERVED[n]) errors.push(`Pin ${cp}: Arduino pin ${n} is reserved (${RESERVED[n]})`);
+        if (used[n]) errors.push(`Arduino pin ${n} used by both chip pin ${used[n]} and ${cp}`);
+        used[n] = cp;
+    }
+
+    // Check each required IO pin is mapped and report which are missing
+    if (chipData && chipData.pinout) {
+        const po = chipData.pinout;
+        const missing = [];
+        (po.inputs||[]).forEach(p => {
+            if (!pinMapping[String(p.pin)]) missing.push(`${p.pin} (${p.name})`);
+        });
+        (po.outputs||[]).forEach(p => {
+            if (!pinMapping[String(p.pin)]) missing.push(`${p.pin} (${p.name})`);
+        });
+        if (missing.length) {
+            errors.push(`Unmapped IO pins: ${missing.join(', ')}`);
+        }
+    }
+
+    warnings.forEach(w => addLogEntry('Validation: ' + w, 'warning'));
+    if (errors.length) {
+        errors.forEach(e => addLogEntry('Validation: ' + e, 'error'));
+        showToast(`${errors.length} error(s), ${warnings.length} warning(s)`, 'error');
+    } else if (warnings.length) {
+        showToast(`Valid with ${warnings.length} warning(s)`, 'warning');
+    } else {
+        addLogEntry('Pin mapping is valid!', 'success');
+        showToast('Pin mapping is valid', 'success');
+    }
+}
+
+function savePinMapping() {
+    if (!selectedChip) { showToast('Select a chip first', 'warning'); return; }
+    // Include PWR markers for VCC/GND so the file matches tkinter format
+    const toSave = Object.assign({}, pinMapping);
+    if (chipData && chipData.pinout) {
+        if (chipData.pinout.vcc) toSave[String(chipData.pinout.vcc)] = 'PWR';
+        if (chipData.pinout.gnd) toSave[String(chipData.pinout.gnd)] = 'PWR';
+    }
+    fetch(`/api/pin_mapping/${selectedChip}`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(toSave)
+    }).then(r => r.json()).then(d => {
+        if (d.success) { showToast('Pin mapping saved', 'success'); addLogEntry(`Saved mapping for ${selectedChip}`, 'success'); }
+        else showToast(d.error || 'Save failed', 'error');
+    }).catch(() => showToast('Save failed', 'error'));
+}
+
+function loadPinMapping() {
+    if (!selectedChip) { showToast('Select a chip first', 'warning'); return; }
+    fetch(`/api/pin_mapping/${selectedChip}`).then(r => r.json()).then(d => {
+        if (d.found && d.data && d.data.mappings) {
+            pinMapping = stripPwrEntries(d.data.mappings);
+            saveState('pinMapping', pinMapping);
+            buildPinMappingTable(chipData);
+            updateChipVisualizerPins();
+            showToast('Pin mapping loaded', 'success');
+            addLogEntry(`Loaded mapping for ${selectedChip}`, 'success');
+            validatePinMapping();
+        } else {
+            showToast('No saved mapping found', 'warning');
+        }
+    }).catch(() => showToast('Load failed', 'error'));
+}
+
+function stripPwrEntries(mappings) {
+    // Remove PWR markers and No-Connect pin entries from loaded mappings
+    const ncPins = new Set();
+    if (chipData && chipData.pinout && chipData.pinout.noConnect) {
+        chipData.pinout.noConnect.forEach(n => ncPins.add(String(n)));
+    }
+    const clean = {};
+    for (const [k, v] of Object.entries(mappings)) {
+        if (String(v).toUpperCase() === 'PWR') continue;
+        if (ncPins.has(k)) continue;
+        clean[k] = v;
+    }
+    return clean;
+}
+
+function checkMigration(fromChip, toChip) {
+    if (!Object.keys(pinMapping).length) return;
+    /* Request migration plan from backend */
+    fetch('/api/migration', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ from_chip: fromChip, to_chip: toChip, old_mapping: pinMapping })
+    }).then(r => r.json()).then(d => {
+        if (d.suggestions && d.suggestions.length) {
+            addLogEntry(`Migration ${fromChip} → ${toChip}:`, 'info');
+            d.suggestions.forEach(s => addLogEntry('  ' + s, 'info'));
+        }
+    }).catch(() => {});
+}
+
+/* ═══════════════════ CHIP VISUALIZER (SVG) ═══════════════════ */
+function drawChipVisualizer(chip) {
+    const container = document.getElementById('chipVisualizerContainer');
+    const pinout = chip.pinout || {};
+    const pkg = chip.package || '14-pin DIP';
+    const totalPins = parseInt(pkg) || 14;
+    const half = totalPins / 2;
+
+    const pinW = 30, pinH = 18, pinGap = 6;
+    const bodyW = 100, bodyH = half * (pinH + pinGap) + 10;
+    const svgW = bodyW + pinW * 2 + 40, svgH = bodyH + 40;
+    const bx = pinW + 20, by = 20;
+
+    let svg = `<svg class="chip-svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
+    // Chip body
+    svg += `<rect class="chip-body" x="${bx}" y="${by}" width="${bodyW}" height="${bodyH}" rx="4"/>`;
+    // Notch
+    svg += `<path class="notch" d="M${bx+bodyW/2-10},${by} A10,10 0 0,0 ${bx+bodyW/2+10},${by}"/>`;
+    // Chip label
+    svg += `<text class="chip-label" x="${bx+bodyW/2}" y="${by+bodyH/2+5}">${chip.chipId || chip.name || ''}</text>`;
+
+    // Build pin info lookup
+    const pinInfo = {};
+    (pinout.inputs||[]).forEach(p => pinInfo[p.pin] = { name: p.name, type: 'IN' });
+    (pinout.outputs||[]).forEach(p => pinInfo[p.pin] = { name: p.name, type: 'OUT' });
+    if (pinout.vcc) pinInfo[pinout.vcc] = { name: 'VCC', type: 'PWR' };
+    if (pinout.gnd) pinInfo[pinout.gnd] = { name: 'GND', type: 'PWR' };
+    (pinout.noConnect||[]).forEach(n => pinInfo[n] = { name: 'NC', type: 'NC' });
+
+    for (let i = 1; i <= totalPins; i++) {
+        const info = pinInfo[i] || { name: `P${i}`, type: '?' };
+        const isLeft = i <= half;
+        const idx = isLeft ? i - 1 : totalPins - i;
+        const py = by + 10 + idx * (pinH + pinGap);
+        let px, labelX, anchor;
+
+        if (isLeft) {
+            px = bx - pinW;
+            labelX = px - 4;
+            anchor = 'end';
+        } else {
+            px = bx + bodyW;
+            labelX = px + pinW + 4;
+            anchor = 'start';
+        }
+
+        const col = info.type === 'IN' ? '#3b82f6' : info.type === 'OUT' ? '#f59e0b' : info.type === 'PWR' ? '#6b7280' : info.type === 'NC' ? '#374151' : '#555';
+        const opacity = info.type === 'NC' ? ' opacity="0.5" stroke="#4b5563" stroke-width="1" stroke-dasharray="4,2"' : '';
+        svg += `<rect class="pin-rect" id="vizPin_${i}" x="${px}" y="${py}" width="${pinW}" height="${pinH}" rx="2" fill="${col}"${opacity} data-pin="${i}"/>`;
+        svg += `<text class="pin-label" x="${labelX}" y="${py+13}" text-anchor="${anchor}"${info.type === 'NC' ? ' opacity="0.45"' : ''}>${i}: ${info.name}</text>`;
+    }
+    svg += '</svg>';
+    container.innerHTML = svg;
+}
+
+function updateChipVisualizerPins() {
+    if (!chipData) return;
+    const pinout = chipData.pinout || {};
+    const pinInfo = {};
+    (pinout.inputs||[]).forEach(p => pinInfo[p.pin] = 'IN');
+    (pinout.outputs||[]).forEach(p => pinInfo[p.pin] = 'OUT');
+    if (pinout.vcc) pinInfo[pinout.vcc] = 'PWR';
+    if (pinout.gnd) pinInfo[pinout.gnd] = 'PWR';
+
+    const pkg = chipData.package || '14-pin DIP';
+    const total = parseInt(pkg) || 14;
+    for (let i = 1; i <= total; i++) {
+        const el = document.getElementById(`vizPin_${i}`);
+        if (!el) continue;
+        const t = pinInfo[i] || '?';
+        const mapped = pinMapping[String(i)];
+        if (t === 'PWR') el.setAttribute('fill', '#6b7280');
+        else if (mapped) el.setAttribute('fill', t === 'IN' ? '#3b82f6' : '#f59e0b');
+        else el.setAttribute('fill', '#333');
+    }
+}
+
+function colorVisualizerFromResults(results) {
+    const pd = results.pinDiagnostics || {};
+    for (const [name, diag] of Object.entries(pd)) {
+        const cp = diag.chipPin;
+        const el = document.getElementById(`vizPin_${cp}`);
+        if (!el) continue;
+        const sev = diag.stuckState;
+        if (sev === 'HIGH' || sev === 'LOW' || sev === 'NO_RESPONSE') el.setAttribute('fill', '#ef4444');
+        else if (sev === 'INTERMITTENT' || diag.timesWrong > 0) el.setAttribute('fill', '#f59e0b');
+        else el.setAttribute('fill', '#10b981');
+    }
+}
+
+/* ═══════════════════ SOCKET HANDLERS ═══════════════════ */
+socket.on('status', function(data) {
+    // Restore sidebar UI to match actual server state on page load
+    if (data.connected) {
+        document.getElementById('connectBtn').classList.add('d-none');
+        document.getElementById('disconnectBtn').classList.remove('d-none');
+        document.getElementById('boardInfo').classList.remove('d-none');
+        document.getElementById('boardType').textContent = data.board_type || 'Unknown';
+        document.getElementById('pinInfo').textContent = data.pin_ranges ?
+            `${data.pin_ranges.digital || '?'} digital, ${data.pin_ranges.analog || '?'} analog` : '';
+    } else {
+        document.getElementById('connectBtn').classList.remove('d-none');
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('connectBtn').innerHTML = '<i class="bi bi-plug me-1"></i>Connect';
+        document.getElementById('disconnectBtn').classList.add('d-none');
+        document.getElementById('boardInfo').classList.add('d-none');
+    }
+    updateButtonStates();
+});
+
+socket.on('ports_found', function(data) {
+    availablePorts = data.ports;
+    const sel = document.getElementById('portSelect');
+    sel.innerHTML = '<option value="">Select port...</option>';
+    data.ports.forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
+});
+
+socket.on('connected', function(data) {
+    if (data.success) {
+        document.getElementById('connectBtn').classList.add('d-none');
+        document.getElementById('disconnectBtn').classList.remove('d-none');
+        document.getElementById('boardInfo').classList.remove('d-none');
+        document.getElementById('boardType').textContent = data.board_type || 'Unknown';
+        document.getElementById('pinInfo').textContent = data.d_count ? `${data.d_count} digital, ${data.a_count} analog` : '';
+        updateButtonStates();
+    } else {
+        const btn = document.getElementById('connectBtn');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug me-1"></i>Connect';
+    }
+});
+
+socket.on('disconnected', function() {
+    document.getElementById('connectBtn').classList.remove('d-none');
+    document.getElementById('connectBtn').disabled = false;
+    document.getElementById('connectBtn').innerHTML = '<i class="bi bi-plug me-1"></i>Connect';
+    document.getElementById('disconnectBtn').classList.add('d-none');
+    document.getElementById('boardInfo').classList.add('d-none');
+    document.getElementById('runTestBtn').disabled = true;
+});
+
+socket.on('test_started', function(data) {
+    isTesting = true;
+    document.getElementById('runTestBtn').classList.add('d-none');
+    document.getElementById('counterBtn').classList.add('d-none');
+    document.getElementById('stopBtn').classList.remove('d-none');
+    setStatusTesting();
+});
+
+socket.on('test_complete', function(data) {
+    lastTestData = data;
+    const r = data.results;
+    document.getElementById('passedCount').textContent = r.testsPassed || 0;
+    document.getElementById('failedCount').textContent = r.testsFailed || 0;
+    document.getElementById('totalCount').textContent = r.testsRun || 0;
+
+    if (data.success) setStatusPassed(); else setStatusFailed();
+
+    // Confidence display
+    if (data.confidence != null) {
+        const ct = document.getElementById('confidenceText');
+        ct.textContent = `Confidence: ${(data.confidence*100).toFixed(0)}%`;
+        ct.classList.remove('d-none');
+    }
+
+    // Color chip visualizer
+    colorVisualizerFromResults(r);
+
+    // Failure zoom & highlight on manual tab visualizer too
+    if (!data.success) {
+        triggerFailureMode(r);
+    } else {
+        clearFailureMode();
+    }
+
+    // Update dashboard
+    updateDashboard(data);
+});
+
+socket.on('test_finished', function() {
+    isTesting = false;
+    document.getElementById('runTestBtn').classList.remove('d-none');
+    const stopBtn = document.getElementById('stopBtn');
+    stopBtn.classList.add('d-none');
+    stopBtn.disabled = false;
+    stopBtn.innerHTML = '<i class="bi bi-stop-fill me-1"></i>Stop';
+    document.getElementById('counterDisplay').classList.add('d-none');
+    // Restore counter button if chip is counter
+    const meta = chipList.find(c => c.id === selectedChip);
+    if (meta && meta.is_counter) document.getElementById('counterBtn').classList.remove('d-none');
+    updateButtonStates();
+});
+
+socket.on('test_error', function(data) {
+    setStatusError();
+    showToast(data.error, 'error');
+});
+
+/* ═══════════════════ STATUS INDICATOR ═══════════════════ */
+function setStatusTesting() {
+    document.getElementById('testStatus').innerHTML = `
+        <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="none" stroke="#f59e0b" stroke-width="4">
+            <animate attributeName="stroke-dasharray" values="0 240;120 120;240 0" dur="1.5s" repeatCount="indefinite"/>
+        </circle><text x="45" y="58" text-anchor="middle" font-size="28" fill="#f59e0b">...</text></svg>`;
+    document.getElementById('statusText').textContent = 'Testing...';
+    document.getElementById('statusText').className = 'text-warning';
+    document.getElementById('confidenceText').classList.add('d-none');
+}
+
+function setStatusPassed() {
+    document.getElementById('testStatus').innerHTML = `
+        <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="#10b981"/>
+        <polyline points="28,45 40,58 62,34" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    document.getElementById('statusText').textContent = 'ALL TESTS PASSED';
+    document.getElementById('statusText').className = 'text-success fw-bold';
+}
+
+function setStatusFailed() {
+    document.getElementById('testStatus').innerHTML = `
+        <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="#ef4444"/>
+        <line x1="30" y1="30" x2="60" y2="60" stroke="white" stroke-width="7" stroke-linecap="round"/>
+        <line x1="60" y1="30" x2="30" y2="60" stroke="white" stroke-width="7" stroke-linecap="round"/></svg>`;
+    document.getElementById('statusText').textContent = 'TESTS FAILED';
+    document.getElementById('statusText').className = 'text-danger fw-bold';
+}
+
+function setStatusError() {
+    document.getElementById('testStatus').innerHTML = `
+        <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="none" stroke="#ef4444" stroke-width="3"/>
+        <text x="45" y="58" text-anchor="middle" font-size="36" fill="#ef4444">!</text></svg>`;
+    document.getElementById('statusText').textContent = 'TEST ERROR';
+    document.getElementById('statusText').className = 'text-danger';
+}
+
+/* ═══════════════════ DASHBOARD ═══════════════════ */
+function updateDashboard(data) {
+    const db = document.getElementById('dashboardContent');
+    const r = data.results || {};
+    const rpt = data.report || {};
+    const ml = data.ml_predictions || {};
+    const an = data.analysis || {};
+    const conf = data.confidence || 0;
+    const dur = data.duration || 0;
+
+    let html = '<div class="row g-3">';
+
+    /* ── Row 1: Summary + Confidence Gauge ── */
+    html += `<div class="col-md-4"><div class="card h-100"><div class="card-header">Test Summary</div><div class="card-body">
+        <p><strong>Chip:</strong> ${r.chipName || rpt.chip_id || '?'}</p>
+        <p><strong>Result:</strong> <span class="${r.success?'text-success':'text-danger'}">${r.success?'PASSED':'FAILED'}</span></p>
+        <p><strong>Tests:</strong> ${r.testsPassed||0} / ${r.testsRun||0} passed</p>
+        <p><strong>Duration:</strong> ${dur.toFixed(1)}s</p>
+    </div></div></div>`;
+
+    html += `<div class="col-md-4"><div class="card h-100"><div class="card-header">Confidence</div><div class="card-body text-center">
+        ${buildGaugeSVG(conf)}
+        <div class="mt-2 small text-muted">${(data.confidence_factors||[]).map(f=>'<div>'+f+'</div>').join('')}</div>
+    </div></div></div>`;
+
+    /* ── Fault Summary ── */
+    const faults = rpt.fault_summary || [];
+    const recs = rpt.recommendations || [];
+    html += `<div class="col-md-4"><div class="card h-100"><div class="card-header">Fault Summary</div><div class="card-body small">
+        ${faults.length ? faults.map(f=>`<div class="text-warning mb-1">${f}</div>`).join('') : '<div class="text-muted">No faults detected</div>'}
+        ${recs.length ? '<hr class="my-2"><strong>Recommendations:</strong>' + recs.map(r=>`<div class="text-info">${r}</div>`).join('') : ''}
+    </div></div></div>`;
+
+    /* ── Row 2: Pin Health Bars ── */
+    const pinDiag = rpt.pin_diagnostics || {};
+    if (Object.keys(pinDiag).length) {
+        html += '<div class="col-12"><div class="card"><div class="card-header">Pin Health</div><div class="card-body">';
+        for (const [name, pd] of Object.entries(pinDiag)) {
+            const pct = Math.round((pd.pass_rate || 0) * 100);
+            const col = pct >= 90 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+            const sev = pd.severity || '';
+            html += `<div class="d-flex align-items-center mb-2">
+                <span class="me-2 small" style="min-width:80px">${name}</span>
+                <div class="health-bar-bg flex-grow-1 me-2"><div class="health-bar-fg" style="width:${pct}%;background:${col};"></div></div>
+                <span class="small ${pct>=90?'text-success':pct>=50?'text-warning':'text-danger'}" style="min-width:55px">${pct}%${sev?' '+sev:''}</span>
+            </div>`;
+        }
+        html += '</div></div></div>';
+    }
+
+    /* ── Row 3: ML Predictions ── */
+    if (Object.keys(ml).length) {
+        html += '<div class="col-md-6"><div class="card"><div class="card-header"><i class="bi bi-robot me-1"></i>ML Predictions</div><div class="card-body small">';
+        for (const [pin, pred] of Object.entries(ml)) {
+            html += `<div class="mb-1"><strong>${pin}:</strong> ${pred.fault} <span class="text-muted">(${(pred.confidence*100).toFixed(0)}%)</span></div>`;
+        }
+        html += '</div></div></div>';
+    }
+
+    /* ── Row 3b: Intelligent Analysis ── */
+    if (an.mistakes && an.mistakes.length) {
+        html += '<div class="col-md-6"><div class="card"><div class="card-header"><i class="bi bi-lightbulb me-1"></i>Analysis</div><div class="card-body small">';
+        an.mistakes.forEach(m => {
+            html += `<div class="mb-1 text-warning">${m.description} <span class="text-muted">(${(m.confidence*100).toFixed(0)}%)</span></div>`;
+        });
+        if (an.fixes && an.fixes.length) {
+            html += '<hr class="my-2"><strong>Suggested Fixes:</strong>';
+            an.fixes.forEach((f,i) => { html += `<div class="text-info">${i+1}. ${f}</div>`; });
+        }
+        html += '</div></div></div>';
+    }
+
+    html += '</div>';
+    db.innerHTML = html;
+}
+
+function buildGaugeSVG(value) {
+    const pct = Math.max(0, Math.min(1, value));
+    const r = 45, cx = 55, cy = 55;
+    const circ = 2 * Math.PI * r;
+    const half = circ / 2;
+    const offset = half - (pct * half);
+    const col = pct >= 0.8 ? '#10b981' : pct >= 0.5 ? '#f59e0b' : '#ef4444';
+    return `<svg width="110" height="70" viewBox="0 0 110 70">
+        <path class="gauge-track" d="M10,60 A45,45 0 0,1 100,60"/>
+        <path class="gauge-fill" d="M10,60 A45,45 0 0,1 100,60"
+            stroke="${col}" stroke-dasharray="${half}" stroke-dashoffset="${offset}"/>
+        <text x="55" y="55" text-anchor="middle" font-size="20" font-weight="bold" fill="${col}">${(pct*100).toFixed(0)}%</text>
+    </svg>`;
+}
+
+/* ═══════════════════ DIAGNOSTICS ═══════════════════ */
+function runDiagnostic(type) {
+    if (!isConnected) { showToast('Connect Arduino first', 'warning'); return; }
+    if (isTesting) { showToast('Test already in progress', 'warning'); return; }
+
+    const payload = { chip_id: selectedChip, pin_mapping: pinMapping };
+    const evts = {
+        'statistical': 'run_statistical',
+        'signals': 'run_signals',
+        'fingerprint': 'run_fingerprint',
+        'benchmark': 'run_benchmark',
+        'analog': 'run_analog',
+    };
+    const evt = evts[type];
+    if (!evt) return;
+    if (type !== 'benchmark' && !selectedChip) { showToast('Select a chip first', 'warning'); return; }
+    socket.emit(evt, payload);
+}
+
+/* ═══════════════════ LOG FUNCTIONS ═══════════════════ */
+function clearLog() {
+    document.getElementById('logContainer').innerHTML = '<div class="text-muted">Ready to test...</div>';
+}
+
+function copyLog() {
+    const lc = document.getElementById('logContainer');
+    const txt = Array.from(lc.children).map(el => el.textContent).join('\n');
+    navigator.clipboard.writeText(txt)
+        .then(() => showToast('Log copied', 'success'))
+        .catch(() => showToast('Copy failed', 'error'));
+}
+
+/* ═══════════════════ MANUAL PIN CONTROL ═══════════════════ */
+let manualPinStates = {};   // { chipPin: 'HIGH'|'LOW' }
+let manualOutputStates = {}; // { chipPin: { name, state } }
+
+function buildManualControls() {
+    const container = document.getElementById('manualControlList');
+    const vizContainer = document.getElementById('manualVizContainer');
+    if (!chipData || !Object.keys(pinMapping).length) {
+        container.innerHTML = '<p class="text-muted">Select a chip and configure pin mapping first</p>';
+        vizContainer.innerHTML = '<p class="text-muted">Select a chip to see live pin states</p>';
+        return;
+    }
+
+    manualPinStates = {};
+    manualOutputStates = {};
+    const pinout = chipData.pinout || {};
+    const inputPins = (pinout.inputs || []);
+    const outputPins = (pinout.outputs || []);
+
+    let html = '';
+
+    // Input section
+    if (inputPins.length) {
+        html += '<div class="mb-3"><div class="small text-info fw-bold mb-2"><i class="bi bi-arrow-right-circle me-1"></i>INPUTS — Toggle HIGH/LOW</div>';
+        inputPins.forEach(p => {
+            const ard = pinMapping[String(p.pin)];
+            if (!ard) return;
+            manualPinStates[p.pin] = 'LOW';
+            html += `<div class="manual-pin-row">
+                <span class="manual-pin-num">${p.pin}</span>
+                <span class="manual-pin-name">${p.name}</span>
+                <span class="text-muted small">→ Ard.${ard}</span>
+                <div class="pin-toggle ms-auto">
+                    <button class="pin-toggle-btn off" id="toggle_${p.pin}" onclick="toggleManualPin(${p.pin}, '${ard}')" title="Click to toggle">
+                    </button>
+                    <span class="pin-toggle-state low" id="toggleLabel_${p.pin}">LOW</span>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+    }
+
+    // Output section
+    if (outputPins.length) {
+        html += '<div class="mb-2"><div class="small text-warning fw-bold mb-2"><i class="bi bi-arrow-left-circle me-1"></i>OUTPUTS — Read State</div>';
+        outputPins.forEach(p => {
+            const ard = pinMapping[String(p.pin)];
+            if (!ard) return;
+            manualOutputStates[p.pin] = { name: p.name, state: '?' };
+            html += `<div class="manual-pin-row">
+                <span class="manual-pin-num">${p.pin}</span>
+                <span class="manual-pin-name">${p.name}</span>
+                <span class="text-muted small">→ Ard.${ard}</span>
+                <div class="d-flex align-items-center ms-auto gap-2">
+                    <span class="read-indicator" id="readDot_${p.pin}"></span>
+                    <span class="pin-toggle-state low" id="readLabel_${p.pin}" style="min-width:40px">—</span>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="readSingleOutput(${p.pin}, ${ard})" title="Read this pin">
+                        <i class="bi bi-broadcast"></i>
+                    </button>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+    }
+
+    if (!html) html = '<p class="text-muted">No mapped pins available for manual control</p>';
+    container.innerHTML = html;
+
+    // Draw the live visualizer copy for manual tab
+    drawManualVisualizer();
+}
+
+function toggleManualPin(chipPin, arduinoPin) {
+    const current = manualPinStates[chipPin] || 'LOW';
+    const newState = current === 'LOW' ? 'HIGH' : 'LOW';
+    manualPinStates[chipPin] = newState;
+
+    // Send to Arduino
+    socket.emit('manual_write_pin', { arduino_pin: parseInt(arduinoPin), state: newState });
+
+    // Update toggle UI immediately
+    const btn = document.getElementById(`toggle_${chipPin}`);
+    const label = document.getElementById(`toggleLabel_${chipPin}`);
+    if (btn) { btn.classList.toggle('on', newState === 'HIGH'); btn.classList.toggle('off', newState === 'LOW'); }
+    if (label) { label.textContent = newState; label.className = 'pin-toggle-state ' + newState.toLowerCase(); }
+
+    // Update visualizer pin
+    updateManualVizPin(chipPin, newState === 'HIGH' ? 'high' : 'low');
+    addLogEntry(`Pin ${chipPin} → ${newState}`, 'info');
+
+    // Auto-read all outputs after a delay so the chip can propagate
+    // and the serial port isn't flooded with overlapping commands
+    clearTimeout(window._autoReadTimer);
+    window._autoReadTimer = setTimeout(() => readAllOutputs(), 350);
+}
+
+function readSingleOutput(chipPin, arduinoPin) {
+    socket.emit('manual_read_pin', { arduino_pin: arduinoPin });
+    // Store which chip pin we're reading so the callback can update it
+    window._pendingReadChipPin = chipPin;
+}
+
+let _readingOutputs = false;
+function readAllOutputs() {
+    if (!selectedChip || !Object.keys(pinMapping).length) {
+        showToast('Configure pin mapping first', 'warning');
+        return;
+    }
+    if (_readingOutputs) return;  // prevent overlapping reads
+    _readingOutputs = true;
+    // Safety timeout: unlock after 5s in case response never arrives
+    setTimeout(() => { _readingOutputs = false; }, 5000);
+    socket.emit('manual_read_all_outputs', {
+        chip_id: selectedChip,
+        pin_mapping: pinMapping,
+    });
+    document.getElementById('vizModeLabel').textContent = 'READING';
+    document.getElementById('vizModeLabel').className = 'badge bg-info';
+}
+
+function resetAllPins() {
+    if (!chipData) return;
+    const pinout = chipData.pinout || {};
+    // Update UI immediately
+    (pinout.inputs || []).forEach(p => {
+        manualPinStates[p.pin] = 'LOW';
+        const btn = document.getElementById(`toggle_${p.pin}`);
+        const label = document.getElementById(`toggleLabel_${p.pin}`);
+        if (btn) { btn.classList.remove('on'); btn.classList.add('off'); }
+        if (label) { label.textContent = 'LOW'; label.className = 'pin-toggle-state low'; }
+        updateManualVizPin(p.pin, 'low');
+    });
+    // Single batch command to Arduino
+    socket.emit('manual_reset_all', {
+        chip_id: selectedChip,
+        pin_mapping: pinMapping,
+    });
+    addLogEntry('All inputs reset to LOW', 'info');
+}
+
+socket.on('manual_reset_done', function(data) {
+    if (data.success) {
+        // Auto-read outputs after reset to update LED state display
+        setTimeout(() => readAllOutputs(), 200);
+    }
+});
+
+function clockToCount() {
+    if (!chipData || !selectedChip) { showToast('Select a chip first', 'warning'); return; }
+    const val = parseInt(document.getElementById('counterTargetInput').value);
+    if (isNaN(val) || val < 0 || val > 9) { showToast('Enter a number 0-9', 'warning'); return; }
+    addLogEntry(`Clocking counter to ${val}...`, 'info');
+    socket.emit('counter_clock_to', {
+        chip_id: selectedChip,
+        pin_mapping: pinMapping,
+        target: val
+    });
+}
+
+socket.on('counter_clock_done', function(data) {
+    if (data.success) {
+        addLogEntry(`Counter reached ${data.target} — reading outputs...`, 'success');
+        setTimeout(() => readAllOutputs(), 150);
+    } else {
+        showToast(`Clock failed: ${data.error || 'unknown error'}`, 'error');
+        addLogEntry(`Clock to ${data.target} FAILED: ${data.error}`, 'error');
+    }
+});
+
+// Socket handlers for manual pin responses
+socket.on('pin_state_changed', function(data) {
+    if (data.success) {
+        document.getElementById('vizModeLabel').textContent = 'ACTIVE';
+        document.getElementById('vizModeLabel').className = 'badge bg-success';
+    } else {
+        showToast(`Pin ${data.arduino_pin} write failed: ${data.error || 'command rejected'}`, 'error');
+        addLogEntry(`Pin ${data.arduino_pin} → ${data.state} FAILED`, 'error');
+    }
+});
+
+socket.on('pin_read_result', function(data) {
+    const chipPin = window._pendingReadChipPin;
+    if (chipPin != null) {
+        updateOutputDisplay(chipPin, data.state);
+        window._pendingReadChipPin = null;
+    }
+});
+
+socket.on('all_outputs_read', function(data) {
+    _readingOutputs = false;
+    const results = data.results || {};
+    for (const [chipPin, info] of Object.entries(results)) {
+        updateOutputDisplay(parseInt(chipPin), info.state);
+    }
+    document.getElementById('vizModeLabel').textContent = 'ACTIVE';
+    document.getElementById('vizModeLabel').className = 'badge bg-success';
+});
+
+function updateOutputDisplay(chipPin, state) {
+    const dot = document.getElementById(`readDot_${chipPin}`);
+    const label = document.getElementById(`readLabel_${chipPin}`);
+    if (dot) {
+        dot.className = 'read-indicator ' + (state === 'HIGH' ? 'high' : state === 'LOW' ? 'low' : 'err');
+    }
+    if (label) {
+        label.textContent = state;
+        label.className = 'pin-toggle-state ' + (state === 'HIGH' ? 'high' : state === 'LOW' ? 'low' : '');
+    }
+    manualOutputStates[chipPin] = { state };
+    updateManualVizPin(chipPin, state === 'HIGH' ? 'high' : state === 'LOW' ? 'low' : 'error');
+}
+
+/* ═══════════════════ MANUAL TAB VISUALIZER ═══════════════════ */
+function drawManualVisualizer() {
+    if (!chipData) return;
+    const container = document.getElementById('manualVizContainer');
+    const pinout = chipData.pinout || {};
+    const pkg = chipData.package || '14-pin DIP';
+    const totalPins = parseInt(pkg) || 14;
+    const half = totalPins / 2;
+
+    const pinW = 36, pinH = 22, pinGap = 8;
+    const bodyW = 120, bodyH = half * (pinH + pinGap) + 14;
+    const svgW = bodyW + pinW * 2 + 60, svgH = bodyH + 50;
+    const bx = pinW + 30, by = 25;
+
+    let svg = `<svg class="chip-svg" id="manualVizSvg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
+    // Defs for glow filters
+    svg += `<defs>
+        <filter id="glowGreen"><feGaussianBlur stdDeviation="3" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="glowRed"><feGaussianBlur stdDeviation="4" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>`;
+    svg += `<rect class="chip-body" x="${bx}" y="${by}" width="${bodyW}" height="${bodyH}" rx="6"/>`;
+    svg += `<path class="notch" d="M${bx+bodyW/2-12},${by} A12,12 0 0,0 ${bx+bodyW/2+12},${by}"/>`;
+    svg += `<text class="chip-label" x="${bx+bodyW/2}" y="${by+bodyH/2+5}">${chipData.chipId || chipData.name || ''}</text>`;
+
+    const pinInfo = {};
+    (pinout.inputs||[]).forEach(p => pinInfo[p.pin] = { name: p.name, type: 'IN' });
+    (pinout.outputs||[]).forEach(p => pinInfo[p.pin] = { name: p.name, type: 'OUT' });
+    if (pinout.vcc) pinInfo[pinout.vcc] = { name: 'VCC', type: 'PWR' };
+    if (pinout.gnd) pinInfo[pinout.gnd] = { name: 'GND', type: 'PWR' };
+    (pinout.noConnect||[]).forEach(n => pinInfo[n] = { name: 'NC', type: 'NC' });
+
+    for (let i = 1; i <= totalPins; i++) {
+        const info = pinInfo[i] || { name: `P${i}`, type: '?' };
+        const isLeft = i <= half;
+        const idx = isLeft ? i - 1 : totalPins - i;
+        const py = by + 12 + idx * (pinH + pinGap);
+        let px, labelX, anchor;
+        if (isLeft) { px = bx - pinW; labelX = px - 5; anchor = 'end'; }
+        else        { px = bx + bodyW; labelX = px + pinW + 5; anchor = 'start'; }
+
+        const col = info.type === 'IN' ? '#3b82f6' : info.type === 'OUT' ? '#f59e0b' : info.type === 'PWR' ? '#6b7280' : info.type === 'NC' ? '#374151' : '#444';
+        const opacity = info.type === 'NC' ? ' opacity="0.5" stroke="#4b5563" stroke-width="1" stroke-dasharray="4,2"' : '';
+        svg += `<rect class="pin-rect" id="mvizPin_${i}" x="${px}" y="${py}" width="${pinW}" height="${pinH}" rx="3" fill="${col}"${opacity} data-pin="${i}"/>`;
+        svg += `<text class="pin-label" x="${labelX}" y="${py+15}" text-anchor="${anchor}" font-size="11"${info.type === 'NC' ? ' opacity="0.45"' : ''}>${i}: ${info.name}</text>`;
+    }
+    svg += '</svg>';
+    container.innerHTML = svg;
+}
+
+function updateManualVizPin(chipPin, state) {
+    const el = document.getElementById(`mvizPin_${chipPin}`);
+    if (!el) return;
+    // Remove previous state classes
+    el.classList.remove('pin-high', 'pin-low', 'pin-fail', 'pin-error');
+    if (state === 'high') {
+        el.setAttribute('fill', '#10b981');
+        el.classList.add('pin-high');
+    } else if (state === 'low') {
+        el.setAttribute('fill', '#3b82f6');
+        el.classList.add('pin-low');
+    } else if (state === 'error' || state === 'fail') {
+        el.setAttribute('fill', '#ef4444');
+        el.classList.add('pin-fail');
+    }
+    // Also update pin-mapping tab visualizer
+    const el2 = document.getElementById(`vizPin_${chipPin}`);
+    if (el2) {
+        el2.classList.remove('pin-high', 'pin-low', 'pin-fail', 'pin-error');
+        if (state === 'high') { el2.setAttribute('fill', '#10b981'); el2.classList.add('pin-high'); }
+        else if (state === 'low') { el2.setAttribute('fill', '#3b82f6'); el2.classList.add('pin-low'); }
+        else if (state === 'fail') { el2.setAttribute('fill', '#ef4444'); el2.classList.add('pin-fail'); }
+    }
+}
+
+/* ═══════════════════ FAILURE ZOOM / HIGHLIGHT ═══════════════════ */
+let failureModeActive = false;
+
+function triggerFailureMode(results) {
+    failureModeActive = true;
+    const pd = results.pinDiagnostics || {};
+    const failedPins = [];
+
+    // Identify failed pins and apply alarm animation
+    for (const [name, diag] of Object.entries(pd)) {
+        const cp = diag.chipPin;
+        const wrong = diag.timesWrong || 0;
+        const stuck = diag.stuckState;
+        if (wrong > 0 || stuck === 'HIGH' || stuck === 'LOW' || stuck === 'NO_RESPONSE') {
+            failedPins.push({ chipPin: cp, name, diag });
+            // Apply fail animation to BOTH visualizers
+            ['vizPin_', 'mvizPin_'].forEach(prefix => {
+                const el = document.getElementById(`${prefix}${cp}`);
+                if (el) {
+                    el.classList.remove('pin-high', 'pin-low');
+                    el.classList.add('pin-fail');
+                    el.setAttribute('fill', '#ef4444');
+                }
+            });
+        }
+    }
+
+    if (!failedPins.length) return;
+
+    // Zoom the manual visualizer SVG
+    const svg = document.getElementById('manualVizSvg');
+    if (svg) svg.classList.add('zoomed');
+
+    // Also zoom the pin-mapping tab visualizer
+    const svg2 = document.querySelector('#chipVisualizerContainer .chip-svg');
+    if (svg2) svg2.classList.add('zoomed');
+
+    // Add scanline overlay to manual viz
+    const vizC = document.getElementById('manualVizContainer');
+    let overlay = vizC.querySelector('.viz-fail-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'viz-fail-overlay';
+        vizC.appendChild(overlay);
+    }
+
+    // Update mode label
+    const modeLabel = document.getElementById('vizModeLabel');
+    modeLabel.textContent = 'FAILURE';
+    modeLabel.className = 'badge bg-danger';
+
+    // Show failure detail card
+    const detailCard = document.getElementById('failureDetailCard');
+    const detailBody = document.getElementById('failureDetailBody');
+    detailCard.classList.remove('d-none');
+
+    let detailHtml = `<div class="small mb-2 text-muted">${failedPins.length} pin(s) with issues detected</div>`;
+    failedPins.forEach(fp => {
+        const d = fp.diag;
+        const tested = d.timesTested || 0;
+        const wrong = d.timesWrong || 0;
+        const stuck = d.stuckState || '';
+        const passRate = tested > 0 ? ((1 - wrong/tested) * 100).toFixed(0) : '?';
+        detailHtml += `<div class="d-flex align-items-center mb-2 p-2 rounded" style="background:#ef444415;border-left:3px solid #ef4444;">
+            <div class="me-3">
+                <span class="read-indicator err"></span>
+            </div>
+            <div class="flex-grow-1">
+                <div class="fw-bold text-danger">Pin ${fp.chipPin}: ${fp.name}</div>
+                <div class="small text-muted">
+                    ${wrong}/${tested} failures | Pass rate: ${passRate}%
+                    ${stuck ? ` | Stuck: <span class="text-warning">${stuck}</span>` : ''}
+                </div>
+            </div>
+        </div>`;
+    });
+    detailBody.innerHTML = detailHtml;
+
+    // Auto-switch to Manual Control tab to show the failure visualization
+    const manualTab = document.querySelector('[data-bs-target="#manual-control"]');
+    if (manualTab) {
+        setTimeout(() => new bootstrap.Tab(manualTab).show(), 600);
+    }
+}
+
+function clearFailureMode() {
+    failureModeActive = false;
+
+    // Remove zoom from both visualizers
+    const svg = document.getElementById('manualVizSvg');
+    if (svg) svg.classList.remove('zoomed');
+    const svg2 = document.querySelector('#chipVisualizerContainer .chip-svg');
+    if (svg2) svg2.classList.remove('zoomed');
+
+    // Remove fail classes from all pins
+    document.querySelectorAll('.pin-fail, .pin-error').forEach(el => {
+        el.classList.remove('pin-fail', 'pin-error');
+    });
+
+    // Remove scanline overlay
+    const overlay = document.querySelector('.viz-fail-overlay');
+    if (overlay) overlay.remove();
+
+    // Hide failure detail card
+    document.getElementById('failureDetailCard').classList.add('d-none');
+
+    // Reset mode label
+    const modeLabel = document.getElementById('vizModeLabel');
+    modeLabel.textContent = 'IDLE';
+    modeLabel.className = 'badge bg-secondary';
+}
+
+/* Rebuild when manual tab is shown */
+document.addEventListener('DOMContentLoaded', function() {
+    const manualTabEl = document.getElementById('manual-tab');
+    if (manualTabEl) {
+        manualTabEl.addEventListener('shown.bs.tab', function() {
+            buildManualControls();
+            clearFailureMode();
+        });
+    }
+});
+
+{% endblock %}

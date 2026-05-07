@@ -17,6 +17,7 @@ system depends on it behaving predictably:
 """
 
 import time
+import threading
 from typing import Optional, List
 
 import serial
@@ -50,6 +51,9 @@ class ArduinoConnection:
         self._event_queue: List[str] = []
         # Board-aware command helper is created after a successful handshake.
         self.commands: Optional[ArduinoCommands] = None
+        # Lock serializes all send_and_receive calls so concurrent SocketIO
+        # handlers cannot interleave bytes on the wire.
+        self._serial_lock = threading.Lock()
         
         logger.info("ArduinoConnection initialized")
     
@@ -277,6 +281,10 @@ class ArduinoConnection:
         """
         Send a command and wait for response.
         
+        Thread-safe: acquires _serial_lock so concurrent callers (e.g.
+        manual-write and auto-read-all from different SocketIO handlers)
+        do not interleave bytes on the wire.
+        
         Args:
             command: Command to send
             timeout: Maximum time to wait for response
@@ -284,18 +292,19 @@ class ArduinoConnection:
         Returns:
             Response string or None if timeout/error
         """
-        if not self.send_command(command):
+        with self._serial_lock:
+            if not self.send_command(command):
+                return None
+            
+            # A short inter-command gap prevents back-to-back GUI operations from
+            # overrunning slower firmware handlers.
+            time.sleep(Config.COMMAND_DELAY)
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                response = self.read_response(timeout=0.05)
+                if response is not None:
+                    return response
             return None
-        
-        # A short inter-command gap prevents back-to-back GUI operations from
-        # overrunning slower firmware handlers.
-        time.sleep(Config.COMMAND_DELAY)
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            response = self.read_response(timeout=0.05)
-            if response is not None:
-                return response
-        return None
     
     def is_responsive(self) -> bool:
         """

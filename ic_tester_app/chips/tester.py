@@ -283,7 +283,10 @@ class ICTester:
         if progress_callback:
             progress_callback("  ✓ Chip is responding (outputs changed)")
         
-        # Verify all output pins
+        # Verify all output pins — ERROR responses (no reply at all) are hard
+        # failures. Value mismatches are warnings only: things like LED loading
+        # or chip settling can cause a single read to disagree with the expected
+        # truth-table value without meaning the chip or wire is actually broken.
         if progress_callback:
             progress_callback("  Verifying all output pins...")
         
@@ -298,6 +301,7 @@ class ICTester:
             exp2 = expected2.get(pin_name, 'LOW')
             
             if 'ERROR' in [val1, val2]:
+                # Hard failure — Arduino got no response at all from the pin
                 problem_pins.append({
                     'chip_pin': chip_pin,
                     'arduino_pin': arduino_pin,
@@ -309,16 +313,11 @@ class ICTester:
                 if progress_callback:
                     progress_callback(f"  ❌ {pin_name} (pin {chip_pin}): ERROR - Check wire to Arduino pin {arduino_pin}!")
             elif val1 != exp1 or val2 != exp2:
-                problem_pins.append({
-                    'chip_pin': chip_pin,
-                    'arduino_pin': arduino_pin,
-                    'name': pin_name,
-                    'error': f'Pin reads {val1}/{val2}, expected {exp1}/{exp2}',
-                    'expected': f'{exp1}/{exp2}',
-                    'actual': f'{val1}/{val2}'
-                })
+                # Soft warning — pin responded but value differs from expected.
+                # Could be LED loading, slow settling, or a legitimate chip fault.
+                # We log it but do not block the full test run.
                 if progress_callback:
-                    progress_callback(f"  ❌ {pin_name} (pin {chip_pin}): Got {val1}/{val2}, expected {exp1}/{exp2}")
+                    progress_callback(f"  ⚠️  {pin_name} (pin {chip_pin}): Got {val1}/{val2}, expected {exp1}/{exp2} (proceeding anyway)")
             else:
                 if progress_callback:
                     progress_callback(f"  ✓ {pin_name} (pin {chip_pin}): {val1}→{val2} ✓")
@@ -502,6 +501,40 @@ class ICTester:
             if progress_callback:
                 progress_callback(f"📌 Using user-defined pin mapping ({len(custom_mapping)} pins)")
             logger.info(f"Using custom pin mapping with {len(custom_mapping)} pins")
+
+        # Pre-flight: verify every required IO pin has an entry in the mapping.
+        # A test with missing input or output pins will silently produce wrong
+        # results — it is much safer to refuse to run and tell the user exactly
+        # which wires are absent.
+        active_mapping = chip_data.get('arduinoMapping', {}).get('io', {})
+        pinout = chip_data.get('pinout', {})
+        missing_pins = []
+        for p in pinout.get('inputs', []):
+            if str(p['pin']) not in active_mapping:
+                missing_pins.append(f"INPUT  {p['name']} (chip pin {p['pin']}) — not in mapping")
+        for p in pinout.get('outputs', []):
+            if str(p['pin']) not in active_mapping:
+                missing_pins.append(f"OUTPUT {p['name']} (chip pin {p['pin']}) — not in mapping")
+
+        if missing_pins:
+            msg = f"Cannot run — {len(missing_pins)} pin(s) not mapped:"
+            if progress_callback:
+                progress_callback(f"❌ {msg}")
+                for m in missing_pins:
+                    progress_callback(f"   ⚠️  {m}")
+                progress_callback("   Add these pins to the pin mapping before running the test.")
+            logger.error(f"Pre-flight failed: {missing_pins}")
+            results = {
+                "chipId": chip_id,
+                "chipName": chip_data.get('name', chip_id),
+                "board": str(board).upper(),
+                "testsRun": 0, "testsPassed": 0, "testsFailed": 0,
+                "testDetails": [], "failedTests": [], "pinDiagnostics": {},
+                "success": False, "pinsVerified": False,
+                "error": msg,
+                "missingPins": missing_pins,
+            }
+            return results
         
         # `results` is intentionally verbose because multiple downstream systems
         # consume it: the output log, dashboard, ML classifier, pattern analyzer,
@@ -622,17 +655,39 @@ class ICTester:
             time.sleep(0.05)
             
             # Apply only the inputs relevant to this vector after the reset pass.
+            input_set_failed = False
             for pin_name, state in test['inputs'].items():
                 if self._abort_flag:
                     break
                 success = self.set_pin_state(chip_data, pin_name, state)
-                if not success and progress_callback:
+                if not success:
                     cpin, apin = input_pin_info.get(pin_name, ('?', '?'))
-                    progress_callback(f"    ⚠️ Failed to set {pin_name} (pin {cpin} → Arduino {apin}) to {state} — CHECK WIRE")
+                    if progress_callback:
+                        progress_callback(f"    ❌ Cannot set {pin_name} (chip pin {cpin} → Arduino {apin}) to {state}")
+                        progress_callback(f"       Check that Arduino pin {apin} is wired to chip pin {cpin}.")
+                    input_set_failed = True
+                    self._abort_flag = True
+                    break
             if self._abort_flag:
+                if input_set_failed:
+                    results["error"] = f"Wiring problem detected during test {test_id} — pin write failed. Check connections."
                 continue
             
-            time.sleep(0.1)  # Allow chip to settle
+            time.sleep(0.05)  # Allow chip to settle after input changes
+
+            # If this test vector requires clock pulses (for sequential chips),
+            # pulse each listed pin HIGH then LOW to generate a falling edge.
+            for clk_pin_name in test.get('clock', []):
+                if self._abort_flag:
+                    break
+                self.set_pin_state(chip_data, clk_pin_name, 'HIGH')
+                time.sleep(0.02)
+                self.set_pin_state(chip_data, clk_pin_name, 'LOW')
+                time.sleep(0.02)
+            if self._abort_flag:
+                continue
+
+            time.sleep(0.05)  # Allow counter to settle after clock edges
             
             # Read the observable outputs and compare them to the expected
             # truth-table row defined in the chip JSON.

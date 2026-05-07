@@ -1,106 +1,130 @@
 # IC Tester Pro
 
-A GUI application for testing 74-series IC chips with either an Arduino Mega 2560 or an Arduino Uno R3.
+A web-based application for testing 74-series IC chips with an Arduino Mega 2560.
 
-The desktop app supports both boards, but the Arduino must be loaded with the matching firmware before use. If you switch between a Mega and an Uno, you must upload the correct `.ino` file to that board in the Arduino IDE first.
+The Arduino must be loaded with the Mega firmware before use. The web UI runs in your browser and communicates with the Arduino over USB serial.
 
-## Quick Start
+## Quick Start (macOS)
 
-### Windows
+1. **Upload firmware** to the Arduino Mega once (only needed the first time or after a firmware change):
+   - Open `ic_tester_firmware/ic_tester_firmware.ino` in the Arduino IDE
+   - Select board: **Arduino Mega 2560** and the correct port
+   - Click Upload
 
-1. Install Python 3.8+ from [python.org](https://www.python.org/downloads/) (check "Add Python to PATH")
-2. Clone or download this repository
-3. Create a virtual environment and install dependencies:
-   ```
-   py -m venv .venv
-   .\.venv\Scripts\python -m pip install -r requirements.txt
-   ```
-4. Run the application:
-   ```
-   .\.venv\Scripts\python run_ic_tester.py
+2. **Install Python dependencies** (only needed once):
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
    ```
 
-### macOS
+3. **Start the web server:**
+   ```bash
+   source venv/bin/activate
+   python -m ic_tester_app.web_ui.app
+   ```
 
-1. Install Python 3.8+ (if not already installed)
-2. Create a virtual environment and install dependencies:
+4. **Open the UI** in your browser: [http://127.0.0.1:5050](http://127.0.0.1:5050)
+
+5. **Connect the Arduino** by clicking the Connect button in the UI — it auto-detects the port.
+
+## Quick Start (Windows)
+
+1. Upload firmware as above using Arduino IDE
+
+2. Install dependencies:
+   ```bat
+   py -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
    ```
-   python3 -m venv .venv
-   ./.venv/bin/python -m pip install -r requirements.txt
+
+3. Start the web server:
+   ```bat
+   venv\Scripts\activate
+   python -m ic_tester_app.web_ui.app
    ```
-3. Run the application:
-   ```
-   ./.venv/bin/python run_ic_tester.py
-   ```
+
+4. Open [http://127.0.0.1:5050](http://127.0.0.1:5050) in your browser
+
+## Stopping the Server
+
+Press `Ctrl+C` in the terminal where the server is running.
 
 ## Requirements
 
 - Python 3.8+
-- pyserial (Arduino communication)
-- **Arduino Mega 2560** for larger IC support
-- **Arduino Uno R3** for smaller 14-pin IC testing
-- Tkinter (included with Python)
+- Arduino Mega 2560 with firmware uploaded
+- Dependencies in `requirements.txt` (Flask, Flask-SocketIO, pyserial)
 
 ## Features
 
-- GUI interface for chip testing
-- Supports both Arduino Mega 2560 and Arduino Uno R3
-- Chip database with JSON definitions
-- Session logging
-- Build script for standalone executable
+- Browser-based UI — no desktop app installation required
+- Manual pin control with real-time output reading
+- Automated test sequences per chip
+- Chip database with JSON definitions (`chips/` folder)
+- Pin mapping per chip (`pin_mappings/` folder)
+- Diagnostic reports with signal analysis
+- Supports multiple 74-series chips
 
-## Arduino Board Compatibility
+## LED Wiring Note
 
-This project supports two Arduino boards with automatic detection:
+**Output pin LEDs must not be wired directly between the chip output and ground.** TTL outputs (like the 7490) have weak HIGH drive capability (~400μA) which cannot push enough current through a LED, causing incorrect LOW readings on the Arduino.
 
-### Arduino Mega 2560 (Recommended)
-- **Firmware**: `ic_tester_firmware/ic_tester_firmware.ino`
-- **Pins**: 52 digital (2-53) + 16 analog (A0-A15)
-- **Best for**: Testing 14-pin, 16-pin, 20-pin, and larger ICs
-- **Use when**: You want the widest chip support and the fewest pin limitations
+**Correct approach for output LEDs** — use an NPN transistor (e.g. 2N2222) as a buffer:
+```
+7490 output ──┬── Arduino pin (reads signal directly)
+              └── 10kΩ ── Base (2N2222 center pin)
+                          Collector ── LED ── 330Ω ── 5V
+                          Emitter ── GND
+```
 
-### Arduino Uno R3
-- **Firmware**: `ic_tester_firmware_uno/ic_tester_firmware_uno.ino`
-- **Pins**: 12 digital (2-13) + 6 analog (A0-A5)
-- **Best for**: Testing 14-pin ICs (7400, 7404, 7408, etc.)
-- **Use when**: You only need smaller chips and want to run the tester on an Uno
-- **See**: `ic_tester_firmware_uno/README_UNO_R3.md` for detailed setup
+**Input pin LEDs** (driven directly by the Arduino) work fine wired directly — the Arduino can source 20mA.
 
-The Python GUI automatically detects which board is connected and adjusts pin validation accordingly.
+## Arduino Firmware Protocol
 
-## Uploading the Correct Arduino Firmware
+The Mega firmware (`ic_tester_firmware/ic_tester_firmware.ino`) uses these serial commands at 9600 baud:
 
-Before using the GUI, upload the correct firmware to the board you plan to connect:
-
-- **Mega 2560**: open `ic_tester_firmware/ic_tester_firmware.ino` in Arduino IDE and upload it to the Mega
-- **Uno R3**: open `ic_tester_firmware_uno/ic_tester_firmware_uno.ino` in Arduino IDE and upload it to the Uno
-
-Important:
-
-- The Python app does not flash the board for you
-- Switching from Mega to Uno, or from Uno back to Mega, requires uploading the matching firmware to the actual Arduino first
-- After the correct sketch is uploaded, connect the board to USB and run the GUI normally
+| Command | Response | Description |
+|---------|----------|-------------|
+| `SET_PIN,pin,HIGH\|LOW` | `SET_PIN_OK,pin,state` | Drive a pin HIGH or LOW |
+| `READ_PIN,pin` | `READ_PIN_OK,pin,HIGH\|LOW` | Read a pin's digital state |
+| `SET_PINS,p1:s1,p2:s2,...` | `SET_PINS_OK,count` | Batch set multiple pins |
+| `READ_PINS,p1,p2,...` | `READ_PINS_OK,p1:s1,p2:s2,...` | Batch read multiple pins |
+| `STATUS` | `STATUS_OK,MEGA2560,READY` | Board health check |
+| `PING` | `PONG` | Connectivity check |
+| `VERSION` | `VERSION,9.0` | Firmware version |
+| `CLEAR` | `CLEAR_OK` | Reset test state |
 
 ## Project Structure
 
-- `run_ic_tester.py` - Main entry point
-- `ic_tester_app/` - Modular application code
-- `chips/` - Chip definition files
-- `ic_tester_firmware/` - Arduino Mega 2560 firmware
-- `ic_tester_firmware_uno/` - Arduino Uno R3 firmware
-- `build_app.py` - Build standalone executable
-
-## Building Standalone Executable
-
-To create a portable version that doesn't require Python:
-
 ```
-python3 -m venv .venv
-./.venv/bin/python -m pip install pyinstaller
-./.venv/bin/python build_app.py
+ic_tester_app/
+  web_ui/
+    app.py              — Flask + SocketIO server (main backend)
+    templates/
+      index.html        — Web UI (single page)
+  arduino/
+    connection.py       — Serial connection manager (thread-safe)
+    commands.py         — Arduino command helpers
+  chips/
+    providers/          — Chip definition loaders
+  diagnostics/          — Test report generators
+chips/                  — Chip JSON definitions (7490.json, etc.)
+pin_mappings/           — Saved pin mappings per chip
+ic_tester_firmware/     — Arduino Mega 2560 firmware (.ino)
+ic_tester_firmware_uno/ — Arduino Uno R3 firmware (.ino)
+requirements.txt
 ```
 
-This creates a standalone application in the `dist/` folder.
+## Uploading Firmware
+
+The Python app does **not** flash the Arduino for you. Use the Arduino IDE:
+
+- **Mega 2560**: `ic_tester_firmware/ic_tester_firmware.ino`
+- **Uno R3**: `ic_tester_firmware_uno/ic_tester_firmware_uno.ino` (limited pin support)
+
+After uploading, close the Arduino IDE serial monitor before starting the web server — both cannot hold the serial port at the same time.
 
 ## License
 

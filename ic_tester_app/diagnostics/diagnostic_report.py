@@ -344,7 +344,7 @@ class DiagnosticReportGenerator:
                 f"May indicate degraded gate or weak drive."
             )
 
-        if report.flickering_pins:
+        if hasattr(report, 'flickering_pins') and report.flickering_pins:
             for fp in report.flickering_pins:
                 recs.append(f"⚡ {fp}: flickering detected — check for floating input or noise")
 

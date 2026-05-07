@@ -58,7 +58,7 @@
       {
         "testId": 1,
         "description": "Reset to 0 (both R0 inputs HIGH)",
-        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW"},
+        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
         "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
         "binaryValue": "0000",
         "decimalValue": 0
@@ -66,24 +66,116 @@
       {
         "testId": 2,
         "description": "Reset to 9 (both R9 inputs HIGH)",
-        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "HIGH", "R9_2": "HIGH"},
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "HIGH", "R9_2": "HIGH", "CKA": "LOW", "CKB": "LOW"},
         "expectedOutputs": {"QA": "HIGH", "QB": "LOW", "QC": "LOW", "QD": "HIGH"},
         "binaryValue": "1001",
         "decimalValue": 9
       },
       {
         "testId": 3,
-        "description": "Clear resets, verify stable at 0",
-        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW"},
+        "description": "Reset back to 0 before counting",
+        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
         "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
         "binaryValue": "0000",
         "decimalValue": 0
       },
       {
         "testId": 4,
-        "description": "Release reset, connect for counting (QA to CKB)",
-        "setup": "For decade counting, connect QA output (pin 12) to CKB input (pin 1)",
-        "note": "This test verifies basic counter functionality with a few clock pulses"
+        "description": "Count 1 — pulse CKA (QA goes HIGH, CKB not clocked yet)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA"],
+        "expectedOutputs": {"QA": "HIGH", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0001",
+        "decimalValue": 1
+      },
+      {
+        "testId": 5,
+        "description": "Count 2 — pulse CKA (QA LOW→HIGH→LOW triggers CKB via software)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA", "CKB"],
+        "expectedOutputs": {"QA": "LOW", "QB": "HIGH", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0010",
+        "decimalValue": 2
+      },
+      {
+        "testId": 6,
+        "description": "Count 3 — pulse CKA only (QA goes HIGH again, QB stays HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA"],
+        "expectedOutputs": {"QA": "HIGH", "QB": "HIGH", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0011",
+        "decimalValue": 3
+      },
+      {
+        "testId": 7,
+        "description": "Count 4 — pulse CKA then CKB (QA falls, triggers QB→QC ripple)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA", "CKB"],
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "HIGH", "QD": "LOW"},
+        "binaryValue": "0100",
+        "decimalValue": 4
+      },
+      {
+        "testId": 8,
+        "description": "Count 5 — pulse CKA only (QA HIGH, QC HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA"],
+        "expectedOutputs": {"QA": "HIGH", "QB": "LOW", "QC": "HIGH", "QD": "LOW"},
+        "binaryValue": "0101",
+        "decimalValue": 5
+      },
+      {
+        "testId": 9,
+        "description": "Count 6 — pulse CKA then CKB (QA falls, QC and QB HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA", "CKB"],
+        "expectedOutputs": {"QA": "LOW", "QB": "HIGH", "QC": "HIGH", "QD": "LOW"},
+        "binaryValue": "0110",
+        "decimalValue": 6
+      },
+      {
+        "testId": 10,
+        "description": "Count 7 — pulse CKA only (QA HIGH, QB HIGH, QC HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA"],
+        "expectedOutputs": {"QA": "HIGH", "QB": "HIGH", "QC": "HIGH", "QD": "LOW"},
+        "binaryValue": "0111",
+        "decimalValue": 7
+      },
+      {
+        "testId": 11,
+        "description": "Count 8 — pulse CKA then CKB (all lower bits reset, QD HIGH)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA", "CKB"],
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "HIGH"},
+        "binaryValue": "1000",
+        "decimalValue": 8
+      },
+      {
+        "testId": 12,
+        "description": "Count 9 — pulse CKA only (QA HIGH, QD HIGH = 1001)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA"],
+        "expectedOutputs": {"QA": "HIGH", "QB": "LOW", "QC": "LOW", "QD": "HIGH"},
+        "binaryValue": "1001",
+        "decimalValue": 9
+      },
+      {
+        "testId": 13,
+        "description": "Count wraps to 0 — pulse CKA then CKB (counter rolls over from 9 to 0)",
+        "inputs": {"R0_1": "LOW", "R0_2": "LOW", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "clock": ["CKA", "CKB"],
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0000",
+        "decimalValue": 0
+      },
+      {
+        "testId": 14,
+        "description": "R0 reset mid-count back to 0",
+        "inputs": {"R0_1": "HIGH", "R0_2": "HIGH", "R9_1": "LOW", "R9_2": "LOW", "CKA": "LOW", "CKB": "LOW"},
+        "expectedOutputs": {"QA": "LOW", "QB": "LOW", "QC": "LOW", "QD": "LOW"},
+        "binaryValue": "0000",
+        "decimalValue": 0
       }
     ]
   },

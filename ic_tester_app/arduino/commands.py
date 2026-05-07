@@ -73,29 +73,27 @@ class ArduinoCommands:
         """
         Set pin mode (INPUT/OUTPUT).
         
+        The firmware handles pinMode internally inside SET_PIN and READ_PIN,
+        so this is a no-op that always succeeds. Kept for API compatibility.
+        
         Args:
             pin: Arduino pin number
             mode: 'INPUT' or 'OUTPUT'
         
         Returns:
-            True if successful
+            Always True (firmware manages pin direction automatically)
         """
-        command = f"MODE,{pin},{mode}"
-        response = self.conn.send_and_receive(command)
-        success = response == "OK"
-        
-        if not success:
-            logger.warning(f"Failed to set pin {pin} to {mode}: {response}")
-        
-        return success
+        # Firmware protocol: SET_PIN does pinMode(OUTPUT) internally,
+        # READ_PIN does pinMode(INPUT) internally. No separate MODE command.
+        return True
     
     def set_pin_input(self, pin: int) -> bool:
-        """Set pin as INPUT"""
-        return self.set_pin_mode(pin, "INPUT")
+        """Set pin as INPUT (no-op, firmware handles this in READ_PIN)"""
+        return True
     
     def set_pin_output(self, pin: int) -> bool:
-        """Set pin as OUTPUT"""
-        return self.set_pin_mode(pin, "OUTPUT")
+        """Set pin as OUTPUT (no-op, firmware handles this in SET_PIN)"""
+        return True
     
     # =========================================================================
     # Pin State Commands
@@ -105,6 +103,9 @@ class ArduinoCommands:
         """
         Write digital state to pin.
         
+        Firmware command: SET_PIN,<pin>,<HIGH|LOW>
+        Expected response: SET_PIN_OK,<pin>,<state>
+        
         Args:
             pin: Arduino pin number
             state: 'HIGH' or 'LOW'
@@ -112,9 +113,12 @@ class ArduinoCommands:
         Returns:
             True if successful
         """
-        command = f"SET,{pin},{state}"
+        command = f"SET_PIN,{pin},{state}"
         response = self.conn.send_and_receive(command)
-        return response == "OK"
+        success = response is not None and response.startswith("SET_PIN_OK")
+        if not success:
+            logger.warning(f"write_pin({pin}, {state}) failed: {response}")
+        return success
     
     def write_high(self, pin: int) -> bool:
         """Write HIGH to pin"""
@@ -128,17 +132,23 @@ class ArduinoCommands:
         """
         Read digital state from pin.
         
+        Firmware command: READ_PIN,<pin>
+        Expected response: READ_PIN_OK,<pin>,<HIGH|LOW>
+        
         Args:
             pin: Arduino pin number
         
         Returns:
             'HIGH', 'LOW', or None if error
         """
-        command = f"READ,{pin}"
+        command = f"READ_PIN,{pin}"
         response = self.conn.send_and_receive(command)
         
-        if response in ['HIGH', 'LOW']:
-            return response
+        if response and response.startswith("READ_PIN_OK"):
+            # Parse: READ_PIN_OK,<pin>,<HIGH|LOW>
+            parts = response.split(',')
+            if len(parts) >= 3 and parts[2] in ('HIGH', 'LOW'):
+                return parts[2]
         
         logger.warning(f"Unexpected read response for pin {pin}: {response}")
         return None
@@ -151,6 +161,9 @@ class ArduinoCommands:
         """
         Set multiple pins at once.
         
+        Firmware command: SET_PINS,<pin>:<state>,<pin>:<state>,...
+        Expected response: SET_PINS_OK,<count>
+        
         Args:
             pin_states: Dict of {pin: state} where state is 'HIGH' or 'LOW'
         
@@ -160,16 +173,20 @@ class ArduinoCommands:
         if not pin_states:
             return True
         
-        # Bundle state changes into one command where supported by the firmware.
-        # This reduces serial round-trips during larger setup/reset operations.
         pairs = [f"{pin}:{state}" for pin, state in pin_states.items()]
-        command = f"BSET,{','.join(pairs)}"
+        command = f"SET_PINS,{','.join(pairs)}"
         response = self.conn.send_and_receive(command)
-        return response == "OK"
+        success = response is not None and response.startswith("SET_PINS_OK")
+        if not success:
+            logger.warning(f"batch_set_pins failed: {response}")
+        return success
     
     def batch_read_pins(self, pins: List[int]) -> Dict[int, str]:
         """
         Read multiple pins at once.
+        
+        Firmware command: READ_PINS,pin1,pin2,...
+        Expected response: READ_PINS_OK,pin1:HIGH,pin2:LOW,...
         
         Args:
             pins: List of pin numbers to read
@@ -180,18 +197,18 @@ class ArduinoCommands:
         if not pins:
             return {}
         
-        # Format: BREAD,pin1,pin2,pin3,...
-        command = f"BREAD,{','.join(map(str, pins))}"
+        command = f"READ_PINS,{','.join(map(str, pins))}"
         response = self.conn.send_and_receive(command)
         
-        if not response:
-            logger.warning("No response from batch read")
+        if not response or not response.startswith("READ_PINS_OK"):
+            logger.warning(f"batch_read_pins failed: {response}")
             return {}
         
-        # Parse response: pin1:state1,pin2:state2,...
+        # Parse response: READ_PINS_OK,pin1:state1,pin2:state2,...
         results = {}
         try:
-            for pair in response.split(','):
+            data_part = response[len("READ_PINS_OK,"):]
+            for pair in data_part.split(','):
                 if ':' in pair:
                     pin_str, state = pair.split(':')
                     results[int(pin_str)] = state
@@ -204,20 +221,16 @@ class ArduinoCommands:
         """
         Set modes for multiple pins at once.
         
+        The firmware handles pinMode internally inside SET_PIN and READ_PIN,
+        so this is a no-op. Kept for API compatibility.
+        
         Args:
             pin_modes: Dict of {pin: mode} where mode is 'INPUT' or 'OUTPUT'
         
         Returns:
-            True if all successful
+            Always True
         """
-        if not pin_modes:
-            return True
-        
-        # Format: BMODE,pin1:mode1,pin2:mode2,...
-        pairs = [f"{pin}:{mode}" for pin, mode in pin_modes.items()]
-        command = f"BMODE,{','.join(pairs)}"
-        response = self.conn.send_and_receive(command)
-        return response == "OK"
+        return True
     
     # =========================================================================
     # Utility Commands
